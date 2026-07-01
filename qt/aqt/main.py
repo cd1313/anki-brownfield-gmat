@@ -1448,6 +1448,11 @@ title="{}" {}>{}</button>""".format(
         qconnect(m.action_check_for_updates.triggered, self.on_check_for_updates)
         qconnect(m.actionPreferences.triggered, self.onPrefs)
 
+        # GMAT memory dashboard (Tools -> GMAT Memory)
+        from aqt.gmat import setup_gmat_menu
+
+        setup_gmat_menu(self)
+
         # View
         qconnect(
             m.actionZoomIn.triggered,

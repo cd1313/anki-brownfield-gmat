@@ -400,7 +400,10 @@ class Reviewer:
         )
         self._update_flag_icon()
         self._update_mark_icon()
-        self._showAnswerButton()
+        from aqt.gmat import maybe_show_mcq_bottom
+
+        if not maybe_show_mcq_bottom(self):
+            self._showAnswerButton()
         self.mw.web.setFocus()
         # user hook
         gui_hooks.reviewer_did_show_question(c)
@@ -691,6 +694,10 @@ class Reviewer:
             self.web.update()
         elif url == "statesMutated":
             self._states_mutated = True
+        elif url.startswith("gmat_mcq"):
+            from aqt.gmat import handle_mcq_message
+
+            handle_mcq_message(self, url)
         else:
             print("unrecognized anki link:", url)
 

@@ -1,0 +1,67 @@
+// Copyright: Ankitects Pty Ltd and contributors
+// License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
+
+syntax = "proto3";
+
+option java_multiple_files = true;
+
+package anki.gmat;
+
+// Read-only aggregation of per-topic memory mastery for term flashcards.
+service GmatService {
+  rpc GetTopicMastery(TopicMasteryRequest) returns (TopicMasteryResponse);
+  rpc GradeMcq(GradeMcqRequest) returns (GradeMcqResponse);
+}
+
+// Implicitly includes the above methods on the backend.
+service BackendGmatService {}
+
+message TopicMasteryRequest {
+  // Anki search selecting the term-card universe (e.g. "deck:GMAT::Terms").
+  // MCQ cards are excluded by this search (e.g. -note:"GMAT MCQ"). Empty =
+  // whole collection.
+  string search = 1;
+  // Topics are tags under this prefix (e.g. "GMAT"). A card contributes to each
+  // matching tag under the prefix.
+  string tag_prefix = 2;
+  // A card is "mastered" when retrievability >= this threshold ...
+  float r_threshold = 3;
+  // ... AND its recent correct reviews were answered within this budget.
+  // 0 disables the time gate.
+  uint32 time_budget_secs = 4;
+  // Give-up rule: a topic shows a score only when it has at least this many
+  // graded reviews ...
+  uint32 min_reviews = 5;
+  // ... and at least this many distinct reviewed cards.
+  uint32 min_cards = 6;
+}
+
+message TopicMasteryResponse {
+  repeated TopicMastery topics = 1;
+}
+
+message TopicMastery {
+  string topic = 1;
+  uint32 total_cards = 2;
+  uint32 reviewed_cards = 3;
+  uint32 mastered_cards = 4;
+  float mean_retrievability = 5;
+  float retrievability_low = 6;
+  float retrievability_high = 7;
+  // False when below the give-up threshold -> caller shows "Not enough data
+  // yet".
+  bool has_score = 8;
+}
+
+message GradeMcqRequest {
+  // The MCQ card being answered.
+  int64 card_id = 1;
+  // The chosen option letter (e.g. "B"), matched case-insensitively.
+  string chosen = 2;
+}
+
+message GradeMcqResponse {
+  bool correct = 1;
+  // The correct option letter, from the note's "Answer" field.
+  string correct_answer = 2;
+}
