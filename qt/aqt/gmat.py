@@ -193,9 +193,34 @@ _MCQ_FRONT = """\
   {{#E}}<button class="gmat-opt" data-letter="E" onclick="gmatChoose('E')"><b>E.</b> {{E}}</button>{{/E}}
 </div>
 <div id="gmat-status"></div>
-<button id="gmat-continue" style="display:none" onclick="pycmd('gmat_mcq_continue')">Continue</button>
+<button id="gmat-continue" style="display:none" onclick="gmatContinue()">Continue</button>
 <script>
-function gmatChoose(l) { pycmd('gmat_mcq:' + l); }
+// AnkiDroid sets globalThis.ankiPlatform = "ankidroid" and neutralizes pycmd, so the
+// same stored template must route option clicks to the local server instead. Both
+// platforms grade objectively in the shared Rust engine (grade_mcq); only the
+// transport differs (desktop pycmd vs AnkiDroid POST /ankidroid/...).
+var GMAT_DROID = (typeof globalThis !== 'undefined' && globalThis.ankiPlatform === 'ankidroid');
+function gmatChoose(l) {
+  if (GMAT_DROID) { gmatChooseDroid(l); } else { pycmd('gmat_mcq:' + l); }
+}
+function gmatChooseDroid(l) {
+  fetch('ankidroid/gmatGradeMcq', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chosen: l })
+  }).then(function (r) { return r.json(); })
+    .then(function (res) { gmatReveal(l, res.correct, res.correctAnswer); })
+    .catch(function (e) { console.log('gmat grade failed', e); });
+}
+function gmatContinue() {
+  if (GMAT_DROID) {
+    fetch('ankidroid/gmatPracticeContinue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}'
+    }).catch(function (e) { console.log('gmat continue failed', e); });
+  } else { pycmd('gmat_mcq_continue'); }
+}
 function gmatReveal(chosen, correct, correctLetter) {
   document.querySelectorAll('.gmat-opt').forEach(function (b) {
     b.disabled = true;

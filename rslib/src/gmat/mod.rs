@@ -12,6 +12,12 @@ use rand::seq::SliceRandom;
 use crate::prelude::*;
 use crate::search::SortMode;
 
+/// A topic's score is withheld (give-up rule) when its coverage-uncertainty
+/// range (`retrievability_high - retrievability_low`) exceeds this width. A
+/// wide range means too few of the section's cards have been reviewed for the
+/// estimate to be trustworthy, so we abstain rather than show it.
+const MAX_SCORE_RANGE: f32 = 0.20;
+
 /// Per-topic accumulator while scanning cards.
 #[derive(Default)]
 struct TopicAcc {
@@ -43,6 +49,11 @@ impl Collection {
     /// ceiling if the unseen are as well known). The range widens when
     /// coverage is low and collapses to the point estimate at full
     /// coverage.
+    ///
+    /// Give-up rule: `has_score` is false (abstain) unless the topic has at
+    /// least `min_reviews` graded reviews AND `min_cards` reviewed cards AND
+    /// its range is no wider than `MAX_SCORE_RANGE` — a range wider than that
+    /// signals too little coverage to trust the number.
     ///
     /// Issues no writes, so undo/collection integrity are unaffected.
     pub(crate) fn compute_topic_mastery(
@@ -137,7 +148,8 @@ impl Collection {
                     0.0
                 };
                 let has_score = acc.graded_reviews >= input.min_reviews
-                    && acc.reviewed_cards >= input.min_cards;
+                    && acc.reviewed_cards >= input.min_cards
+                    && (reviewed_mean - coverage_aware) <= MAX_SCORE_RANGE;
                 anki_proto::gmat::TopicMastery {
                     topic,
                     total_cards: acc.total_cards,
@@ -425,6 +437,35 @@ mod tests {
             t.mean_retrievability > 0.4 && t.mean_retrievability < 0.6,
             "expected ~0.5 from 1 of 2 covered, got {}",
             t.mean_retrievability
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn wide_range_abstains_even_with_enough_reviews() -> Result<()> {
+        let mut col = Collection::new();
+        // One well-known reviewed card ...
+        add_reviewed_card(&mut col, DeckId(1), "GMAT::Quant::Algebra", 2_000);
+        // ... plus four unreviewed cards in the same section => low coverage,
+        // so the range (high ~1.0, low ~0.2) is far wider than MAX_SCORE_RANGE.
+        let nt = col.basic_notetype();
+        for _ in 0..4 {
+            let mut note = nt.new_note();
+            note.tags = vec!["GMAT::Quant::Geometry".to_string()];
+            col.add_note(&mut note, DeckId(1)).unwrap();
+        }
+        // min_reviews and min_cards are both satisfied (1 review, 1 reviewed card),
+        // so the range gate is the only reason to abstain.
+        let res = col.compute_topic_mastery(request("", 60, 1))?;
+        let t = &res.topics[0];
+        assert_eq!(t.reviewed_cards, 1);
+        assert!(
+            t.retrievability_high - t.retrievability_low > MAX_SCORE_RANGE,
+            "fixture should produce a wide range"
+        );
+        assert!(
+            !t.has_score,
+            "a range wider than {MAX_SCORE_RANGE} must abstain"
         );
         Ok(())
     }
