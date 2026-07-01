@@ -39,6 +39,8 @@ const IGNORED_FOLDERS: &[&str] = &[
     "./.venv",
     "./qt/installer/windows-template",
     "./qt/installer/mac-template",
+    // Agent tooling / skills — not part of the Anki/GMAT source (gitignored).
+    "./.agents",
 ];
 
 fn main() -> Result<()> {

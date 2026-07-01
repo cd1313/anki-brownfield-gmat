@@ -69,3 +69,48 @@ def test_gmat_grade_mcq():
     res = col._backend.grade_mcq(card_id=cid, chosen="A")
     assert not res.correct
     assert res.correct_answer == "C"
+
+
+def _add_mcq_notetype(col):
+    mm = col.models
+    nt = mm.new("GMAT MCQ")
+    for field in ["Question", "Answer"]:
+        mm.add_field(nt, mm.new_field(field))
+    tmpl = mm.new_template("Card 1")
+    tmpl["qfmt"] = "{{Question}}"
+    tmpl["afmt"] = "{{Question}}<hr>{{Answer}}"
+    mm.add_template(nt, tmpl)
+    mm.add(nt)
+    return nt
+
+
+def test_gmat_practice_pool():
+    col = getEmptyCol()
+    nt = _add_mcq_notetype(col)
+    cids = []
+    for ans in ["A", "B", "C"]:
+        note = col.new_note(nt)
+        note["Question"] = "Q"
+        note["Answer"] = ans
+        col.add_note(note, deck_id=1)
+        cids.append(note.cards()[0].id)
+
+    search = 'note:"GMAT MCQ"'
+
+    # Cycle 1: all three available; draw returns one of them.
+    res = col._backend.next_practice_card(search=search, cycle=1)
+    assert not res.exhausted
+    assert res.remaining == 3
+    assert res.card_id in cids
+
+    # Mark all done for cycle 1 -> pool exhausted.
+    for cid in cids:
+        col._backend.mark_practice_done(card_id=cid, cycle=1)
+    res = col._backend.next_practice_card(search=search, cycle=1)
+    assert res.exhausted
+    assert res.remaining == 0
+
+    # Cycle 2 (a reset): everything is available again.
+    res = col._backend.next_practice_card(search=search, cycle=2)
+    assert not res.exhausted
+    assert res.remaining == 3

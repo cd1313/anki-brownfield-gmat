@@ -18,4 +18,18 @@ impl crate::services::GmatService for Collection {
     ) -> error::Result<anki_proto::gmat::GradeMcqResponse> {
         self.grade_mcq_answer(input)
     }
+
+    fn next_practice_card(
+        &mut self,
+        input: anki_proto::gmat::PracticePoolRequest,
+    ) -> error::Result<anki_proto::gmat::NextPracticeCardResponse> {
+        self.next_practice_card_impl(input)
+    }
+
+    fn mark_practice_done(
+        &mut self,
+        input: anki_proto::gmat::MarkPracticeDoneRequest,
+    ) -> error::Result<anki_proto::collection::OpChanges> {
+        self.mark_practice_done_impl(input)
+    }
 }

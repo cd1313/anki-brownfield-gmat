@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use fsrs::FSRS;
 use fsrs::FSRS5_DEFAULT_DECAY;
+use rand::seq::SliceRandom;
 
 use crate::prelude::*;
 use crate::search::SortMode;
@@ -185,6 +186,73 @@ impl Collection {
             correct_answer,
         })
     }
+
+    /// Practice pool ("custom review order"): return a random card matching
+    /// `search` whose `custom_data` is not marked done for `cycle`. Read-only —
+    /// no scheduling, no FSRS, no revlog. `exhausted` is true when none remain.
+    pub(crate) fn next_practice_card_impl(
+        &mut self,
+        input: anki_proto::gmat::PracticePoolRequest,
+    ) -> Result<anki_proto::gmat::NextPracticeCardResponse> {
+        let cids = self.search_cards(input.search.as_str(), SortMode::NoOrder)?;
+        let mut remaining: Vec<CardId> = Vec::new();
+        for cid in cids {
+            if let Some(card) = self.storage.get_card(cid)? {
+                if practice_done_cycle(&card.custom_data) != Some(input.cycle) {
+                    remaining.push(cid);
+                }
+            }
+        }
+        remaining.shuffle(&mut rand::rng());
+        let picked = remaining.first().copied();
+        Ok(anki_proto::gmat::NextPracticeCardResponse {
+            card_id: picked.map(|c| c.0).unwrap_or(0),
+            exhausted: picked.is_none(),
+            remaining: remaining.len() as u32,
+        })
+    }
+
+    /// Mark a practice card completed for `cycle` by stamping its
+    /// `custom_data`. Undo-aware; does not touch scheduling/FSRS or the
+    /// revlog.
+    pub(crate) fn mark_practice_done_impl(
+        &mut self,
+        input: anki_proto::gmat::MarkPracticeDoneRequest,
+    ) -> Result<anki_proto::collection::OpChanges> {
+        let cid = CardId(input.card_id);
+        let cycle = input.cycle;
+        self.transact(crate::ops::Op::UpdateCard, |col| {
+            let orig = col.storage.get_card(cid)?.or_not_found(cid)?;
+            let mut card = orig.clone();
+            card.custom_data = set_practice_cycle(&card.custom_data, cycle)?;
+            col.update_card_inner(&mut card, orig, col.usn()?)
+        })
+        .map(Into::into)
+    }
+}
+
+/// The practice cycle a card is marked done for, read from its `custom_data`
+/// ("gp" key). `None` if unmarked or unparseable.
+fn practice_done_cycle(custom_data: &str) -> Option<u32> {
+    if custom_data.is_empty() {
+        return None;
+    }
+    serde_json::from_str::<serde_json::Value>(custom_data)
+        .ok()
+        .and_then(|v| v.get("gp").and_then(|g| g.as_u64()))
+        .map(|n| n as u32)
+}
+
+/// Return `custom_data` with the practice cycle marker ("gp") set, preserving
+/// any other keys.
+fn set_practice_cycle(custom_data: &str, cycle: u32) -> Result<String> {
+    let mut obj: serde_json::Map<String, serde_json::Value> = if custom_data.is_empty() {
+        serde_json::Map::new()
+    } else {
+        serde_json::from_str(custom_data).unwrap_or_default()
+    };
+    obj.insert("gp".to_string(), serde_json::json!(cycle));
+    Ok(serde_json::to_string(&serde_json::Value::Object(obj))?)
 }
 
 /// Section-level topics for a card's tags: each tag under `prefix`, truncated
@@ -423,5 +491,84 @@ mod tests {
         let res = grade(&mut col, cid, "A");
         assert!(!res.correct);
         assert_eq!(res.correct_answer, "");
+    }
+
+    // --- practice pool ------------------------------------------------------
+
+    fn add_practice_cards(col: &mut Collection, answers: &[&str]) -> Vec<CardId> {
+        let mut nt = Notetype {
+            name: "GMAT MCQ".into(),
+            ..Default::default()
+        };
+        nt.add_field("Question");
+        nt.add_field("Answer");
+        nt.add_template("Card 1", "{{Question}}", "{{Question}}<hr>{{Answer}}");
+        col.add_notetype(&mut nt, true).unwrap();
+        let mut cids = Vec::new();
+        for ans in answers {
+            let mut note = nt.new_note();
+            note.fields_mut()[0] = "Q".into();
+            note.fields_mut()[1] = (*ans).into();
+            col.add_note(&mut note, DeckId(1)).unwrap();
+            cids.push(col.storage.card_ids_of_notes(&[note.id]).unwrap()[0]);
+        }
+        cids
+    }
+
+    fn pool_req(search: &str, cycle: u32) -> anki_proto::gmat::PracticePoolRequest {
+        anki_proto::gmat::PracticePoolRequest {
+            search: search.to_string(),
+            cycle,
+        }
+    }
+
+    fn mark_done(col: &mut Collection, cid: CardId, cycle: u32) {
+        let _ = col
+            .mark_practice_done_impl(anki_proto::gmat::MarkPracticeDoneRequest {
+                card_id: cid.0,
+                cycle,
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn practice_pool_returns_a_card() {
+        let mut col = Collection::new();
+        let cids = add_practice_cards(&mut col, &["A", "B", "C"]);
+        let res = col
+            .next_practice_card_impl(pool_req("note:\"GMAT MCQ\"", 1))
+            .unwrap();
+        assert!(!res.exhausted);
+        assert_eq!(res.remaining, 3);
+        assert!(cids.iter().any(|c| c.0 == res.card_id));
+    }
+
+    #[test]
+    fn practice_pool_exhausts_when_all_done() {
+        let mut col = Collection::new();
+        let cids = add_practice_cards(&mut col, &["A", "B", "C"]);
+        for c in &cids {
+            mark_done(&mut col, *c, 1);
+        }
+        let res = col
+            .next_practice_card_impl(pool_req("note:\"GMAT MCQ\"", 1))
+            .unwrap();
+        assert!(res.exhausted, "all cards done this cycle");
+        assert_eq!(res.remaining, 0);
+    }
+
+    #[test]
+    fn practice_pool_resets_next_cycle() {
+        let mut col = Collection::new();
+        let cids = add_practice_cards(&mut col, &["A", "B", "C"]);
+        for c in &cids {
+            mark_done(&mut col, *c, 1);
+        }
+        // Bumping the cycle makes every card "unmarked" again (pool reset).
+        let res = col
+            .next_practice_card_impl(pool_req("note:\"GMAT MCQ\"", 2))
+            .unwrap();
+        assert!(!res.exhausted);
+        assert_eq!(res.remaining, 3);
     }
 }

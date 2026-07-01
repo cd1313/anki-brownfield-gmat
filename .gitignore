@@ -25,3 +25,6 @@ docs/_build/
 docs/autoapi/
 .complexipy_cache
 data/gmat/aqua_mcq.csv
+
+# Agent tooling / skills (not part of the project)
+.agents/

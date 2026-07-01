@@ -7,10 +7,17 @@ option java_multiple_files = true;
 
 package anki.gmat;
 
-// Read-only aggregation of per-topic memory mastery for term flashcards.
+import "anki/collection.proto";
+
+// GMAT-specific engine services: memory mastery, MCQ grading, and the
+// no-FSRS random-without-replacement practice queue.
 service GmatService {
   rpc GetTopicMastery(TopicMasteryRequest) returns (TopicMasteryResponse);
   rpc GradeMcq(GradeMcqRequest) returns (GradeMcqResponse);
+  // Practice pool: pick a random practice card not yet completed this cycle.
+  rpc NextPracticeCard(PracticePoolRequest) returns (NextPracticeCardResponse);
+  // Mark a practice card completed for the given cycle (no FSRS / no revlog).
+  rpc MarkPracticeDone(MarkPracticeDoneRequest) returns (collection.OpChanges);
 }
 
 // Implicitly includes the above methods on the backend.
@@ -64,4 +71,26 @@ message GradeMcqResponse {
   bool correct = 1;
   // The correct option letter, from the note's "Answer" field.
   string correct_answer = 2;
+}
+
+message PracticePoolRequest {
+  // Anki search selecting the practice-card universe
+  // (e.g. 'deck:"GMAT::Practice" note:"GMAT MCQ"').
+  string search = 1;
+  // Current practice cycle; cards marked done for this cycle are excluded.
+  uint32 cycle = 2;
+}
+
+message NextPracticeCardResponse {
+  // The chosen card id (0 when exhausted).
+  int64 card_id = 1;
+  // True when no cards remain for this cycle.
+  bool exhausted = 2;
+  // How many cards were still available before this draw.
+  uint32 remaining = 3;
+}
+
+message MarkPracticeDoneRequest {
+  int64 card_id = 1;
+  uint32 cycle = 2;
 }

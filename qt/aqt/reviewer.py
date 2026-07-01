@@ -248,7 +248,15 @@ class Reviewer:
         self.previous_card = self.card
         self.card = None
         self._v3 = None
-        self._get_next_v3_card()
+
+        from aqt.gmat import pool_serve, practice_pool_active
+
+        if practice_pool_active(self):
+            # GMAT practice pool: serve a random un-done card (no FSRS). pool_serve
+            # sets self.card, or leaves it None and shows the cycle-complete screen.
+            pool_serve(self)
+        else:
+            self._get_next_v3_card()
 
         self._previous_card_info.set_card(self.previous_card)
         self._card_info.set_card(self.card)
@@ -463,6 +471,11 @@ class Reviewer:
     ##########################################################################
 
     def _showAnswer(self) -> None:
+        from aqt.gmat import suppress_default_answer
+
+        if suppress_default_answer(self):
+            # GMAT practice pool MCQ: only option-clicks advance (no Show Answer).
+            return
         if self.mw.state != "review":
             # showing resetRequired screen; ignore space
             return
@@ -535,6 +548,12 @@ class Reviewer:
 
     def _answerCard(self, ease: Literal[1, 2, 3, 4]) -> None:
         "Reschedule card and show next."
+        from aqt.gmat import suppress_default_answer
+
+        if suppress_default_answer(self):
+            # GMAT practice pool MCQ: no FSRS scheduling; grading is objective and
+            # advancing is handled by the pool (aqt.gmat._advance).
+            return
         if self.mw.state != "review":
             # showing resetRequired screen; ignore key
             return

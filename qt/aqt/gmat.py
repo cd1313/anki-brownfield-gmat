@@ -173,6 +173,16 @@ def setup_gmat_menu(mw: aqt.AnkiQt) -> None:
 MCQ_NOTETYPE_NAME = "GMAT MCQ"
 _MCQ_FIELDS = ["Question", "A", "B", "C", "D", "E", "Answer", "Explanation"]
 
+# --- Practice pool (no-FSRS, random-without-replacement) ---------------------
+# Studying GMAT::Practice serves MCQs from a pool via the Rust engine
+# (NextPracticeCard / MarkPracticeDone). Each answered card is removed for the
+# cycle; when the pool empties we show a "cycle complete" screen and reset on the
+# next start. No FSRS: pool cards are never answer_card'd.
+PRACTICE_DECK = "GMAT::Practice"
+PRACTICE_SEARCH = f'deck:"{PRACTICE_DECK}" note:"{MCQ_NOTETYPE_NAME}"'
+_CYCLE_KEY = "gmat_practice_cycle"
+_CYCLE_DONE_KEY = "gmat_practice_cycle_done"
+
 _MCQ_FRONT = """\
 <div class="gmat-q">{{Question}}</div>
 <div class="gmat-opts">
@@ -296,9 +306,72 @@ def _advance(reviewer) -> None:
         return
     ease = _pending_ease
     _pending_ease = None
-    # Record the objective grade through Anki's normal, undo-safe answer path.
+    if practice_pool_active(reviewer):
+        # Pool mode: no FSRS. Mark the card done for this cycle and draw the next.
+        card = reviewer.card
+        if card is not None:
+            pool_mark_done(reviewer.mw.col, card.id)
+        reviewer.nextCard()
+        return
+    # Normal mode: record the objective grade through Anki's undo-safe answer path.
     reviewer._showAnswer()
-    if ease == 3:
-        reviewer._answerCard(3)
-    else:
-        reviewer._answerCard(1)
+    reviewer._answerCard(3 if ease == 3 else 1)
+
+
+# --- Practice pool helpers (called from the reviewer) ------------------------
+
+
+def practice_pool_active(reviewer) -> bool:
+    """True when the deck being studied is GMAT::Practice (pool mode)."""
+    col = reviewer.mw.col
+    if not col:
+        return False
+    did = col.decks.get_current_id()
+    return col.decks.name(did) == PRACTICE_DECK
+
+
+def suppress_default_answer(reviewer) -> bool:
+    """In pool mode only option-clicks advance; the spacebar / ease keys and the
+    normal Show-Answer path must not run (they'd hit FSRS with no `_v3`)."""
+    return practice_pool_active(reviewer) and _is_mcq_card(reviewer)
+
+
+def _cycle(col) -> int:
+    return int(col.get_config(_CYCLE_KEY, 1))
+
+
+def pool_mark_done(col, card_id: int) -> None:
+    col._backend.mark_practice_done(card_id=card_id, cycle=_cycle(col))
+
+
+def pool_reset(col) -> None:
+    col.set_config(_CYCLE_KEY, _cycle(col) + 1)
+
+
+def pool_serve(reviewer) -> bool:
+    """Set `reviewer.card` to a random not-yet-done practice card for this cycle.
+    Returns False (and shows the cycle-complete screen) when the pool is empty."""
+    col = reviewer.mw.col
+    # A previously completed cycle resets on this next entry.
+    if col.get_config(_CYCLE_DONE_KEY, False):
+        pool_reset(col)
+        col.set_config(_CYCLE_DONE_KEY, False)
+    res = col._backend.next_practice_card(search=PRACTICE_SEARCH, cycle=_cycle(col))
+    if res.exhausted:
+        col.set_config(_CYCLE_DONE_KEY, True)
+        _show_cycle_complete(reviewer)
+        reviewer.card = None
+        return False
+    from anki.cards import CardId
+
+    reviewer.card = col.get_card(CardId(res.card_id))
+    reviewer.card.start_timer()
+    reviewer._v3 = None
+    return True
+
+
+def _show_cycle_complete(reviewer) -> None:
+    tooltip(
+        "You've completed all practice questions — the pool resets next time.",
+        parent=reviewer.mw,
+    )
