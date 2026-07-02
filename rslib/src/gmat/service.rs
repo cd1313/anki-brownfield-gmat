@@ -32,4 +32,11 @@ impl crate::services::GmatService for Collection {
     ) -> error::Result<anki_proto::collection::OpChanges> {
         self.mark_practice_done_impl(input)
     }
+
+    fn estimate_readiness(
+        &mut self,
+        input: anki_proto::gmat::ReadinessRequest,
+    ) -> error::Result<anki_proto::gmat::ReadinessResponse> {
+        self.estimate_readiness_impl(input)
+    }
 }

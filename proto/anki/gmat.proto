@@ -18,6 +18,9 @@ service GmatService {
   rpc NextPracticeCard(PracticePoolRequest) returns (NextPracticeCardResponse);
   // Mark a practice card completed for the given cycle (no FSRS / no revlog).
   rpc MarkPracticeDone(MarkPracticeDoneRequest) returns (collection.OpChanges);
+  // Per-section performance (IRT ability θ) + pacing + projected readiness,
+  // computed from logged MCQ responses. Read-only.
+  rpc EstimateReadiness(ReadinessRequest) returns (ReadinessResponse);
 }
 
 // Implicitly includes the above methods on the backend.
@@ -52,12 +55,19 @@ message TopicMastery {
   uint32 total_cards = 2;
   uint32 reviewed_cards = 3;
   uint32 mastered_cards = 4;
-  float mean_retrievability = 5;
-  float retrievability_low = 6;
-  float retrievability_high = 7;
+  // Practiced: mean recall over the cards you've reviewed ("what you've
+  // studied"). Range is the 10th–90th percentile of per-card retrievability
+  // across reviewed cards.
+  float practiced_score = 5;
+  float practiced_low = 6;
+  float practiced_high = 7;
   // False when below the give-up threshold -> caller shows "Not enough data
   // yet".
   bool has_score = 8;
+  // Category: coverage-aware recall over the whole section, with unreviewed
+  // cards counted as 0 (= practiced × coverage). Reported as a single raw
+  // number (no range).
+  float category_score = 9;
 }
 
 message GradeMcqRequest {
@@ -65,6 +75,10 @@ message GradeMcqRequest {
   int64 card_id = 1;
   // The chosen option letter (e.g. "B"), matched case-insensitively.
   string chosen = 2;
+  // Milliseconds taken to answer (card shown -> option click). When > 0, the
+  // attempt is logged as a non-scheduling revlog entry so the IRT performance
+  // model has response data. 0 = don't record (e.g. previews).
+  uint32 took_millis = 3;
 }
 
 message GradeMcqResponse {
@@ -79,6 +93,10 @@ message PracticePoolRequest {
   string search = 1;
   // Current practice cycle; cards marked done for this cycle are excluded.
   uint32 cycle = 2;
+  // Section-level tag prefix (e.g. "GMAT") used to group per-section IRT
+  // ability for the adaptive recommender. Empty disables IRT weighting ->
+  // random draw.
+  string tag_prefix = 3;
 }
 
 message NextPracticeCardResponse {
@@ -93,4 +111,54 @@ message NextPracticeCardResponse {
 message MarkPracticeDoneRequest {
   int64 card_id = 1;
   uint32 cycle = 2;
+}
+
+message ReadinessRequest {
+  // Practice-card universe (e.g. 'deck:"GMAT::Practice" note:"GMAT MCQ"').
+  string search = 1;
+  // Topics are section-level tags under this prefix (e.g. "GMAT").
+  string tag_prefix = 2;
+  // Per-item pacing budget in seconds (an answer beyond this is "over budget").
+  uint32 time_budget_secs = 3;
+  // Section time limit in minutes (GMAT Focus = 45), for the pacing projection.
+  uint32 section_minutes = 4;
+  // Give-up rule: need at least this many graded responses ...
+  uint32 min_responses = 5;
+  // ... this fraction of the section's items attempted ...
+  float min_coverage = 6;
+  // ... and an ability standard error no larger than this.
+  float max_se = 7;
+}
+
+message ReadinessResponse {
+  repeated SectionReadiness sections = 1;
+}
+
+message SectionReadiness {
+  string section = 1;
+  // --- Performance (accuracy, IRT) ---
+  // Ability estimate (logit scale) and its posterior standard error.
+  float theta = 2;
+  float theta_se = 3;
+  uint32 responses = 4;
+  uint32 items_attempted = 5;
+  uint32 items_available = 6;
+  float coverage = 7;
+  // Raw accuracy over logged responses (diagnostic / baseline).
+  float pct_correct = 8;
+  // --- Pacing (Phase C) ---
+  // Fraction of responses answered within time_budget_secs.
+  float within_budget_rate = 9;
+  // Projected time (minutes) to complete a full section at the current pace.
+  float projected_section_minutes = 10;
+  // --- Readiness (Phase C) ---
+  // Projected section score (GMAT Focus 60–90) with a range, after the pacing
+  // adjustment; 0 when abstaining.
+  float score = 11;
+  float score_low = 12;
+  float score_high = 13;
+  // "low" | "medium" | "high".
+  string confidence = 14;
+  // False when below the give-up threshold -> caller shows "Not enough data".
+  bool has_score = 15;
 }

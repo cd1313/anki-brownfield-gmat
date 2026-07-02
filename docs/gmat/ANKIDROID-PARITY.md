@@ -70,7 +70,7 @@ for the template to reveal inline. Objective grading itself is proven on desktop
 `just check` green); the Kotlin handler compiles and is dispatched.
 
 **Deployment note (only gap on device):** the deck currently on the emulator was imported from an
-`.apkg` exported *before* the template became platform-aware, so its cards still carry the old `pycmd`
+`.apkg` exported _before_ the template became platform-aware, so its cards still carry the old `pycmd`
 template (a no-op on AnkiDroid) and taps don't grade yet. To exercise grading + the cycle on the phone,
 re-deploy the template: launch desktop Anki once (`ensure_mcq_notetype` refreshes the stored template
 on startup), re-export `GMAT::Practice`, then re-import on the phone (or sync). No code change needed.

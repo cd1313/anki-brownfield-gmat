@@ -1,13 +1,16 @@
 # Copyright: Ankitects Pty Ltd and contributors
 # License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 
-"""GMAT memory dashboard (Wednesday milestone, Deliverable 4).
+"""GMAT readiness dashboard + MCQ practice wiring.
 
-Surfaces the read-only ``get_topic_mastery`` backend RPC (Deliverable 2a) as a
-simple per-section memory score with an honest range and give-up rule.
+Surfaces the three per-section GMAT scores, each separately (never blended), via
+read-only backend RPCs:
+  - Memory: ``get_topic_mastery`` (term-flashcard FSRS retrievability).
+  - Performance: ``estimate_readiness`` (IRT ability θ / accuracy on new MCQs).
+  - Readiness: ``estimate_readiness`` (projected section score + pacing).
 
-Memory only, term flashcards only -- MCQ practice / performance / readiness are
-deliberately excluded here.
+Each score has an honest range and its own give-up rule. Also wires the "GMAT
+MCQ" note type + the no-FSRS practice pool.
 """
 
 from __future__ import annotations
@@ -27,6 +30,17 @@ TIME_BUDGET_SECS = 20  # most-recent rated review must be within this to count
 MIN_REVIEWS = 10  # a section is scored only after >= this many graded reviews ...
 MIN_CARDS = 5  # ... and >= this many distinct reviewed cards
 
+# Performance/readiness (IRT) give-up gate — based on how many MCQs answered, not
+# elapsed time. Coverage is NOT gated (practice pools are ~2000 cards/section).
+PERF_MIN_RESPONSES = 20  # need >= this many graded MCQ responses to show a score
+PERF_MAX_SE = 0.7  # ... and an ability standard error no larger than this
+PERF_MIN_COVERAGE = 0.0  # coverage is not a gate for performance/readiness
+# Pacing parameters (feed the readiness pacing factor; NOT a gate):
+SECTION_MINUTES = 45  # real GMAT Focus section time limit, for the pacing projection
+PRACTICE_TIME_BUDGET_SECS = (
+    120  # per-question budget; over this counts as "over budget"
+)
+
 # The term-card universe (excludes MCQ practice) and the canonical GMAT sections
 # we always display, so empty sections still show an honest "no data" state.
 TERMS_SEARCH = 'deck:"GMAT::Terms"'
@@ -38,36 +52,52 @@ SECTIONS = [
 ]
 
 
-class GmatMemoryDialog(QDialog):
+class GmatReadinessDialog(QDialog):
+    """Shows the three GMAT scores per section, each separately (never blended):
+    Memory (term recall, FSRS), Performance (new-question ability, IRT), and
+    Readiness (projected section score + pacing)."""
+
     def __init__(self, mw: aqt.AnkiQt) -> None:
         super().__init__(mw)
         self.mw = mw
-        self.setWindowTitle("GMAT Memory")
+        self.setWindowTitle("GMAT Readiness")
         disable_help_button(self)
 
         layout = QVBoxLayout(self)
 
         intro = QLabel(
-            "Memory score per GMAT section, from term flashcards only "
-            "(FSRS retrievability, gated by recall speed). Coverage-aware: it is "
-            "your average recall across the whole section, so cards you haven't "
-            "reviewed pull it down. No score is shown until a section has enough "
-            "review data."
+            "Three separate scores per GMAT section. <b>Memory</b> = recall of term "
+            "flashcards (FSRS), shown two ways: <i>Practiced</i> = recall over the cards "
+            "you've studied (shown with a 10th–90th percentile range); <i>Category</i> "
+            "= coverage-aware over the whole section as a single number (unreviewed "
+            "cards count as 0). <b>Performance</b> = ability on new MCQs (IRT). "
+            "<b>Readiness</b> = projected section score (60–90) with a pacing check. "
+            "No score is shown until a section has enough data."
         )
         intro.setWordWrap(True)
         layout.addWidget(intro)
 
-        self.table = QTableWidget(len(SECTIONS), 5, self)
-        self.table.setHorizontalHeaderLabels(
-            ["Section", "Memory score", "Likely range", "Reviewed / Total", "Status"]
+        self.memory_table = self._add_table(
+            layout,
+            "Memory — term recall (MCQ excluded)",
+            [
+                "Section",
+                "Practiced (studied cards)",
+                "Category (whole section)",
+                "Reviewed / Total",
+                "Status",
+            ],
         )
-        self.table.verticalHeader().setVisible(False)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-        self.table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch
+        self.performance_table = self._add_table(
+            layout,
+            "Performance — new MCQs (IRT ability)",
+            ["Section", "Accuracy", "Ability θ", "Responses", "Status"],
         )
-        layout.addWidget(self.table)
+        self.readiness_table = self._add_table(
+            layout,
+            "Readiness — projected section score",
+            ["Section", "Projected score", "Likely range", "Confidence", "Pacing"],
+        )
 
         self.status_label = QLabel("")
         self.status_label.setWordWrap(True)
@@ -80,68 +110,178 @@ class GmatMemoryDialog(QDialog):
         qconnect(close.clicked, self.close)
         layout.addWidget(buttons)
 
-        restoreGeom(self, "GmatMemoryDialog", default_size=(680, 320))
+        restoreGeom(self, "GmatReadinessDialog", default_size=(760, 640))
         self.refresh()
+
+    def _add_table(
+        self, layout: QVBoxLayout, title: str, headers: list[str]
+    ) -> QTableWidget:
+        layout.addWidget(QLabel(f"<b>{title}</b>"))
+        table = QTableWidget(len(SECTIONS), len(headers), self)
+        table.setHorizontalHeaderLabels(headers)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        table.setFixedHeight(28 * (len(SECTIONS) + 1) + 8)
+        layout.addWidget(table)
+        return table
+
+    @staticmethod
+    def _set_row(table: QTableWidget, row: int, cells: list[str]) -> None:
+        for col_idx, text in enumerate(cells):
+            table.setItem(row, col_idx, QTableWidgetItem(text))
 
     def refresh(self) -> None:
         col = self.mw.col
         if not col:
             return
-        results = col._backend.get_topic_mastery(
-            search=TERMS_SEARCH,
-            tag_prefix=TAG_PREFIX,
-            r_threshold=R_THRESHOLD,
-            time_budget_secs=TIME_BUDGET_SECS,
-            min_reviews=MIN_REVIEWS,
-            min_cards=MIN_CARDS,
-        )
-        by_topic = {t.topic: t for t in results}
+        memory = {
+            t.topic: t
+            for t in col._backend.get_topic_mastery(
+                search=TERMS_SEARCH,
+                tag_prefix=TAG_PREFIX,
+                r_threshold=R_THRESHOLD,
+                time_budget_secs=TIME_BUDGET_SECS,
+                min_reviews=MIN_REVIEWS,
+                min_cards=MIN_CARDS,
+            )
+        }
+        readiness = {
+            s.section: s
+            for s in col._backend.estimate_readiness(
+                search=PRACTICE_SEARCH,
+                tag_prefix=TAG_PREFIX,
+                time_budget_secs=PRACTICE_TIME_BUDGET_SECS,
+                section_minutes=SECTION_MINUTES,
+                min_responses=PERF_MIN_RESPONSES,
+                min_coverage=PERF_MIN_COVERAGE,
+                max_se=PERF_MAX_SE,
+            )
+        }
 
         for row, (topic, label) in enumerate(SECTIONS):
-            t = by_topic.get(topic)
+            # --- Memory ---
+            t = memory.get(topic)
             if t is None:
-                cells = [label, "Not enough data yet", "", "0 / 0", "No cards"]
+                self._set_row(
+                    self.memory_table,
+                    row,
+                    [label, "Not enough data yet", "", "0 / 0", "No cards"],
+                )
             elif not t.has_score:
-                cells = [
-                    label,
-                    "Not enough data yet",
-                    "",
-                    f"{t.reviewed_cards} / {t.total_cards}",
-                    f"Needs ≥{MIN_REVIEWS} reviews & ≥{MIN_CARDS} cards",
-                ]
+                self._set_row(
+                    self.memory_table,
+                    row,
+                    [
+                        label,
+                        "Not enough data yet",
+                        "Not enough data yet",
+                        f"{t.reviewed_cards} / {t.total_cards}",
+                        f"Needs ≥{MIN_REVIEWS} reviews & ≥{MIN_CARDS} cards",
+                    ],
+                )
             else:
-                low = t.retrievability_low * 100
-                high = t.retrievability_high * 100
-                cells = [
-                    label,
-                    f"{t.mean_retrievability * 100:.0f}%",
-                    f"{low:.0f}–{high:.0f}%",
-                    f"{t.reviewed_cards} / {t.total_cards}",
-                    f"{t.mastered_cards} mastered",
-                ]
-            for col_idx, text in enumerate(cells):
-                self.table.setItem(row, col_idx, QTableWidgetItem(text))
+                practiced = (
+                    f"{t.practiced_score * 100:.0f}%  "
+                    f"({t.practiced_low * 100:.0f}–{t.practiced_high * 100:.0f}%)"
+                )
+                category = f"{t.category_score * 100:.0f}%"
+                self._set_row(
+                    self.memory_table,
+                    row,
+                    [
+                        label,
+                        practiced,
+                        category,
+                        f"{t.reviewed_cards} / {t.total_cards}",
+                        f"{t.mastered_cards} mastered",
+                    ],
+                )
+
+            # --- Performance + Readiness (same estimate_readiness row) ---
+            s = readiness.get(topic)
+            if s is None:
+                self._set_row(
+                    self.performance_table,
+                    row,
+                    [label, "Not enough data yet", "", "0", "No practice attempts"],
+                )
+                self._set_row(
+                    self.readiness_table,
+                    row,
+                    [label, "Not enough data yet", "", "", ""],
+                )
+            elif not s.has_score:
+                self._set_row(
+                    self.performance_table,
+                    row,
+                    [
+                        label,
+                        "Not enough data yet",
+                        "",
+                        str(s.responses),
+                        f"Needs ≥{PERF_MIN_RESPONSES} responses",
+                    ],
+                )
+                self._set_row(
+                    self.readiness_table,
+                    row,
+                    [
+                        label,
+                        "Not enough data yet",
+                        "",
+                        "low",
+                        f"{s.within_budget_rate * 100:.0f}% within budget",
+                    ],
+                )
+            else:
+                self._set_row(
+                    self.performance_table,
+                    row,
+                    [
+                        label,
+                        f"{s.pct_correct * 100:.0f}%",
+                        f"{s.theta:+.2f}",
+                        str(s.responses),
+                        "scored",
+                    ],
+                )
+                self._set_row(
+                    self.readiness_table,
+                    row,
+                    [
+                        label,
+                        f"{s.score:.0f}",
+                        f"{s.score_low:.0f}–{s.score_high:.0f}",
+                        s.confidence,
+                        f"{s.within_budget_rate * 100:.0f}% in budget · ~{s.projected_section_minutes:.0f}/{SECTION_MINUTES} min",
+                    ],
+                )
 
         updated = time.strftime("%Y-%m-%d %H:%M:%S")
         self.status_label.setText(
-            f"Last updated: {updated}    ·    "
-            f"Give-up rule: a section is scored only after ≥{MIN_REVIEWS} graded "
-            f"reviews and ≥{MIN_CARDS} reviewed cards.    ·    "
-            "Memory only — MCQ practice is excluded."
+            f"Last updated: {updated}\n"
+            f"Give-up: Memory needs ≥{MIN_REVIEWS} reviews & ≥{MIN_CARDS} cards; "
+            f"Performance/Readiness need ≥{PERF_MIN_RESPONSES} answered MCQs (with a precise "
+            "enough estimate).\n"
+            "Memory = term recall only (MCQ excluded). Performance = IRT ability from timed MCQs "
+            "(item difficulty is assumed, not calibrated). Readiness θ→score is an approximate "
+            "placeholder, not validated against real exam outcomes."
         )
 
     def closeEvent(self, evt: QCloseEvent | None) -> None:
-        saveGeom(self, "GmatMemoryDialog")
+        saveGeom(self, "GmatReadinessDialog")
         super().closeEvent(evt)
 
 
 # Module-level reference so the modeless dialog isn't garbage-collected.
-_dialog: GmatMemoryDialog | None = None
+_dialog: GmatReadinessDialog | None = None
 
 
-def show_gmat_memory(mw: aqt.AnkiQt) -> None:
+def show_gmat_readiness(mw: aqt.AnkiQt) -> None:
     global _dialog
-    _dialog = GmatMemoryDialog(mw)
+    _dialog = GmatReadinessDialog(mw)
     _dialog.show()
 
 
@@ -154,9 +294,9 @@ def _create_mcq_notetype(mw: aqt.AnkiQt) -> None:
 
 def setup_gmat_menu(mw: aqt.AnkiQt) -> None:
     """Add the GMAT entries under the Tools menu."""
-    memory = QAction("GMAT Memory", mw)
-    qconnect(memory.triggered, lambda: show_gmat_memory(mw))
-    mw.form.menuTools.addAction(memory)
+    readiness = QAction("GMAT Readiness", mw)
+    qconnect(readiness.triggered, lambda: show_gmat_readiness(mw))
+    mw.form.menuTools.addAction(readiness)
 
     mcq = QAction("Create GMAT MCQ Note Type", mw)
     qconnect(mcq.triggered, lambda: _create_mcq_notetype(mw))
@@ -180,6 +320,9 @@ _MCQ_FIELDS = ["Question", "A", "B", "C", "D", "E", "Answer", "Explanation"]
 # next start. No FSRS: pool cards are never answer_card'd.
 PRACTICE_DECK = "GMAT::Practice"
 PRACTICE_SEARCH = f'deck:"{PRACTICE_DECK}" note:"{MCQ_NOTETYPE_NAME}"'
+# Section-level tag prefix; enables the IRT-weighted "recommend my weakest
+# section, at my level" selection in the practice pool.
+TAG_PREFIX = "GMAT"
 _CYCLE_KEY = "gmat_practice_cycle"
 _CYCLE_DONE_KEY = "gmat_practice_cycle_done"
 
@@ -200,14 +343,17 @@ _MCQ_FRONT = """\
 // platforms grade objectively in the shared Rust engine (grade_mcq); only the
 // transport differs (desktop pycmd vs AnkiDroid POST /ankidroid/...).
 var GMAT_DROID = (typeof globalThis !== 'undefined' && globalThis.ankiPlatform === 'ankidroid');
+// When this card is shown, for the AnkiDroid answer-latency (the IRT pacing input).
+var GMAT_SHOWN = Date.now();
 function gmatChoose(l) {
   if (GMAT_DROID) { gmatChooseDroid(l); } else { pycmd('gmat_mcq:' + l); }
 }
 function gmatChooseDroid(l) {
+  var tookMillis = Math.max(0, Date.now() - GMAT_SHOWN);
   fetch('ankidroid/gmatGradeMcq', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chosen: l })
+    body: JSON.stringify({ chosen: l, tookMillis: tookMillis })
   }).then(function (r) { return r.json(); })
     .then(function (res) { gmatReveal(l, res.correct, res.correctAnswer); })
     .catch(function (e) { console.log('gmat grade failed', e); });
@@ -317,7 +463,13 @@ def _grade_and_reveal(reviewer, letter: str) -> None:
     global _pending_ease
     if reviewer.state != "question" or not _is_mcq_card(reviewer):
         return
-    res = reviewer.mw.col._backend.grade_mcq(card_id=reviewer.card.id, chosen=letter)
+    # Latency (card shown -> option click) feeds the IRT performance model's
+    # pacing factor; passing it also logs the attempt as a non-scheduling
+    # revlog entry (see grade_mcq_answer in rslib/src/gmat).
+    took_millis = reviewer.card.time_taken() if reviewer.card else 0
+    res = reviewer.mw.col._backend.grade_mcq(
+        card_id=reviewer.card.id, chosen=letter, took_millis=took_millis
+    )
     _pending_ease = 3 if res.correct else 1  # Good / Again
     reviewer.web.eval(
         f"gmatReveal({json.dumps(letter)}, {json.dumps(res.correct)}, "
@@ -329,18 +481,26 @@ def _advance(reviewer) -> None:
     global _pending_ease
     if _pending_ease is None:
         return
-    ease = _pending_ease
     _pending_ease = None
+    card = reviewer.card
     if practice_pool_active(reviewer):
         # Pool mode: no FSRS. Mark the card done for this cycle and draw the next.
-        card = reviewer.card
         if card is not None:
             pool_mark_done(reviewer.mw.col, card.id)
         reviewer.nextCard()
         return
-    # Normal mode: record the objective grade through Anki's undo-safe answer path.
+    # An MCQ card reached via the normal scheduler (e.g. studying a parent deck):
+    # never FSRS-answer it. Bury it (no reschedule, no memory state) so the queue
+    # advances without re-serving it, then move on.
+    if _is_mcq_card(reviewer):
+        if card is not None:
+            reviewer.mw.col.sched.bury_cards([card.id])
+        reviewer.nextCard()
+        return
+    # A genuine non-MCQ card: unreachable here (MCQ grading is the only caller),
+    # but keep the normal answer path for safety.
     reviewer._showAnswer()
-    reviewer._answerCard(3 if ease == 3 else 1)
+    reviewer._answerCard(3)
 
 
 # --- Practice pool helpers (called from the reviewer) ------------------------
@@ -356,9 +516,12 @@ def practice_pool_active(reviewer) -> bool:
 
 
 def suppress_default_answer(reviewer) -> bool:
-    """In pool mode only option-clicks advance; the spacebar / ease keys and the
-    normal Show-Answer path must not run (they'd hit FSRS with no `_v3`)."""
-    return practice_pool_active(reviewer) and _is_mcq_card(reviewer)
+    """For any MCQ card (in ANY deck, not just when studying GMAT::Practice
+    directly): only option-clicks advance. The spacebar / ease keys and the
+    normal Show-Answer path must not run — they'd FSRS-answer the card. This is
+    the guard that keeps practice cards out of FSRS even under parent-deck study.
+    Grading a served MCQ card then buries it (see `_advance`)."""
+    return _is_mcq_card(reviewer)
 
 
 def _cycle(col) -> int:
@@ -374,14 +537,17 @@ def pool_reset(col) -> None:
 
 
 def pool_serve(reviewer) -> bool:
-    """Set `reviewer.card` to a random not-yet-done practice card for this cycle.
+    """Set `reviewer.card` to the recommended not-yet-done practice card for this
+    cycle (IRT-weighted: weakest section, at your level; see the Rust engine).
     Returns False (and shows the cycle-complete screen) when the pool is empty."""
     col = reviewer.mw.col
     # A previously completed cycle resets on this next entry.
     if col.get_config(_CYCLE_DONE_KEY, False):
         pool_reset(col)
         col.set_config(_CYCLE_DONE_KEY, False)
-    res = col._backend.next_practice_card(search=PRACTICE_SEARCH, cycle=_cycle(col))
+    res = col._backend.next_practice_card(
+        search=PRACTICE_SEARCH, cycle=_cycle(col), tag_prefix=TAG_PREFIX
+    )
     if res.exhausted:
         col.set_config(_CYCLE_DONE_KEY, True)
         _show_cycle_complete(reviewer)

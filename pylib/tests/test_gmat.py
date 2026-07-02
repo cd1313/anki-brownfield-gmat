@@ -61,12 +61,13 @@ def test_gmat_grade_mcq():
     cid = note.cards()[0].id
 
     # Correct choice (case-insensitive) grades correct via the backend RPC.
-    res = col._backend.grade_mcq(card_id=cid, chosen="c")
+    # took_millis=0 means "grade only, don't log the attempt".
+    res = col._backend.grade_mcq(card_id=cid, chosen="c", took_millis=0)
     assert res.correct
     assert res.correct_answer == "C"
 
     # Wrong choice grades incorrect but still returns the correct answer.
-    res = col._backend.grade_mcq(card_id=cid, chosen="A")
+    res = col._backend.grade_mcq(card_id=cid, chosen="A", took_millis=0)
     assert not res.correct
     assert res.correct_answer == "C"
 
@@ -96,9 +97,10 @@ def test_gmat_practice_pool():
         cids.append(note.cards()[0].id)
 
     search = 'note:"GMAT MCQ"'
+    # Empty tag_prefix -> the plain random draw (no IRT weighting).
 
     # Cycle 1: all three available; draw returns one of them.
-    res = col._backend.next_practice_card(search=search, cycle=1)
+    res = col._backend.next_practice_card(search=search, cycle=1, tag_prefix="")
     assert not res.exhausted
     assert res.remaining == 3
     assert res.card_id in cids
@@ -106,11 +108,96 @@ def test_gmat_practice_pool():
     # Mark all done for cycle 1 -> pool exhausted.
     for cid in cids:
         col._backend.mark_practice_done(card_id=cid, cycle=1)
-    res = col._backend.next_practice_card(search=search, cycle=1)
+    res = col._backend.next_practice_card(search=search, cycle=1, tag_prefix="")
     assert res.exhausted
     assert res.remaining == 0
 
     # Cycle 2 (a reset): everything is available again.
-    res = col._backend.next_practice_card(search=search, cycle=2)
+    res = col._backend.next_practice_card(search=search, cycle=2, tag_prefix="")
     assert not res.exhausted
     assert res.remaining == 3
+
+
+def test_gmat_practice_recommends_weakest_section():
+    col = getEmptyCol()
+    nt = _add_mcq_notetype(col)
+
+    def add_section(tag, n):
+        cids = []
+        for _ in range(n):
+            note = col.new_note(nt)
+            note["Question"] = "Q"
+            note["Answer"] = "C"
+            note.tags = [tag]
+            col.add_note(note, deck_id=1)
+            cids.append(note.cards()[0].id)
+        return cids
+
+    quant = add_section("GMAT::Quant::Algebra", 3)
+    verbal = add_section("GMAT::Verbal::CR", 3)
+
+    # Quant answered wrong (low ability); Verbal answered right (high ability).
+    for cid in quant:
+        col._backend.grade_mcq(card_id=cid, chosen="A", took_millis=3000)
+    for cid in verbal:
+        col._backend.grade_mcq(card_id=cid, chosen="C", took_millis=3000)
+
+    # With tag_prefix set, the IRT-weighted recommender should serve a card from
+    # the weakest section (Quant) rather than a random one.
+    res = col._backend.next_practice_card(
+        search='note:"GMAT MCQ"', cycle=1, tag_prefix="GMAT"
+    )
+    assert not res.exhausted
+    assert res.card_id in quant
+
+
+def test_gmat_estimate_readiness():
+    col = getEmptyCol()
+    nt = _add_mcq_notetype(col)
+    cids = []
+    for _ in range(12):
+        note = col.new_note(nt)
+        note["Question"] = "Q"
+        note["Answer"] = "C"
+        note.tags = ["GMAT::Quant::Algebra"]
+        col.add_note(note, deck_id=1)
+        cids.append(note.cards()[0].id)
+
+    # Log 12 correct attempts (well within budget). Passing took_millis records
+    # each as a non-scheduling revlog entry — the IRT model's input.
+    for cid in cids:
+        res = col._backend.grade_mcq(card_id=cid, chosen="C", took_millis=3000)
+        assert res.correct
+
+    def readiness():
+        return {
+            s.section: s
+            for s in col._backend.estimate_readiness(
+                search='note:"GMAT MCQ"',
+                tag_prefix="GMAT",
+                time_budget_secs=120,
+                section_minutes=45,
+                min_responses=10,
+                min_coverage=0.5,
+                max_se=1.0,
+            )
+        }
+
+    by = readiness()
+    assert "GMAT::Quant" in by
+    q = by["GMAT::Quant"]
+    assert q.responses == 12
+    assert q.items_attempted == 12
+    assert q.items_available == 12
+    assert q.coverage == 1.0
+    assert q.pct_correct == 1.0
+    assert q.theta > 0.0  # all correct -> positive ability
+    assert q.has_score
+    assert 60.0 <= q.score <= 90.0
+    assert q.score_low <= q.score <= q.score_high
+    assert abs(q.within_budget_rate - 1.0) < 1e-6
+    assert q.confidence in ("low", "medium", "high")
+
+    # took_millis == 0 must NOT log another response.
+    col._backend.grade_mcq(card_id=cids[0], chosen="C", took_millis=0)
+    assert readiness()["GMAT::Quant"].responses == 12
