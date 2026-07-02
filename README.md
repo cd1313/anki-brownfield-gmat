@@ -31,6 +31,7 @@ Stock Anki gives you self-graded flashcards and FSRS scheduling. This fork adds 
 stock Anki does **not** have:
 
 ### 1. Two study modes — one of them objectively graded
+
 - **Terms** (`GMAT::Terms` deck) — ordinary flashcards you self-grade (Again/Hard/Good/Easy). This
   is the only place self-grading is used, and it feeds the **Memory** score.
 - **Practice** (`GMAT::Practice` deck) — multiple-choice questions using a new **"GMAT MCQ"** note
@@ -39,24 +40,26 @@ stock Anki does **not** have:
   are recorded as non-scheduling entries, so MCQ results **never** contaminate the Memory score.
 
 ### 2. GMAT Readiness dashboard — three honest scores, never blended
-Each score has a range and/or a **give-up rule**: below a data threshold it shows *"Not enough
-data yet"* instead of a misleading number.
+
+Each score has a range and/or a **give-up rule**: below a data threshold it shows _"Not enough
+data yet"_ instead of a misleading number.
 
 - **Memory** (term recall, from FSRS retrievability), reported two ways:
   - **Practiced** — recall over the cards you've actually reviewed, shown **with a range** (the
     10th–90th percentile of per-card recall).
-  - **Category** — coverage-aware recall over the *whole* section (unreviewed cards count as 0),
+  - **Category** — coverage-aware recall over the _whole_ section (unreviewed cards count as 0),
     shown as a single number, so studying 5 of 500 cards can't read as "100% ready."
   - A term counts as **mastered** only if recall ≥ 0.8 **and** the last review was answered within
     20 s (timed, like the real exam).
-  - *Give-up:* needs ≥ **10** graded reviews **and** ≥ **5** distinct reviewed cards.
+  - _Give-up:_ needs ≥ **10** graded reviews **and** ≥ **5** distinct reviewed cards.
 - **Performance** — per-section ability **θ** under an IRT **3PL** model, estimated by EAP from your
-  timed MCQ answers. *Give-up:* needs ≥ **20** answered MCQs and an ability standard error ≤ **0.7**.
+  timed MCQ answers. _Give-up:_ needs ≥ **20** answered MCQs and an ability standard error ≤ **0.7**.
 - **Readiness** — a projected section score (**60–90**) with a range and confidence, combining
   accuracy (θ → score) with a **pacing** check (your median time/question projected across a full
   45-minute section).
 
 ### 3. Adaptive practice recommender (IRT-based)
+
 The Practice pool doesn't serve questions at random. Using your current IRT scores it recommends
 **weakness-first, at your level**: it prioritizes your lowest-ability section and, within it, picks
 questions whose difficulty is near your ability. Item difficulty is a hybrid estimate calibrated
@@ -65,6 +68,7 @@ exploration bonus so new questions still surface. With no data yet it falls back
 draw — honest by construction.
 
 ### 4. Shared Rust engine → identical on phone and desktop
+
 All of the above lives in one Rust module (`rslib/src/gmat/`) behind protobuf RPCs, so the
 **AnkiDroid companion** computes the exact same scores and recommendations as the desktop app. The
 scores are explicit about their limits (item difficulty is assumed/observed, not professionally
@@ -99,11 +103,40 @@ just test-rust      # Rust tests (includes the GMAT engine tests)
 just test-py        # Python tests (includes pylib/tests/test_gmat.py)
 ```
 
-**Building the macOS `.dmg`:** the installer is
-[Briefcase](https://beeware.org/project/projects/tools/briefcase/)-based under
-[`qt/installer/`](qt/installer/) (per-platform templates for mac/linux/windows). Build the wheels
-with `just wheels`, then run Briefcase against the `mac-template` to produce the `.dmg` package.
-See [`qt/installer/README.md`](qt/installer/README.md).
+### Building the macOS installer (`.dmg`)
+
+The installer is [Briefcase](https://beeware.org/project/projects/tools/briefcase/)-based (config
+under [`qt/installer/`](qt/installer/)). Two steps — a one-time template download, then the build:
+
+```sh
+# 1. One-time: fetch the macOS app template (a git submodule).
+git submodule update --init qt/installer/mac-template
+
+# 2. Build the wheels + app bundle + .dmg (this is what CI runs).
+tools/build-installer
+```
+
+The finished installer is written to:
+
+```
+out/installer/dist/anki-<version>-mac-apple.dmg      # -mac-intel on Intel Macs
+```
+
+Then install it with the [macOS install steps](#installing-on-macos-from-the-dmg) above.
+
+**Notes**
+
+- **Requirements:** network access (step 1 clones the template; the build downloads dependencies)
+  and the Xcode Command Line Tools (`xcode-select --install`) for macOS packaging.
+- **Signing:** by default the app is **ad-hoc signed**, so it runs on your own machine but shows the
+  "unidentified developer" prompt elsewhere (right-click → Open to bypass). For a distributable,
+  properly-signed build, set `SIGN_IDENTITY` to your Apple Developer ID before running step 2.
+- **If step 1 is skipped**, the build (and the `test_installer.py` tests in `just check`) fail with
+  _"Unable to clone application template"_ — that just means the template submodule isn't present.
+- `tools/build-installer` runs `RELEASE=2 ./ninja installer`. To run the heavy stages separately:
+  `./ninja installer:build` (compile the app), then `./ninja installer:package` (wrap the `.dmg`).
+- **Other platforms:** the same `tools/build-installer` works on Linux/Windows (initialize the
+  matching `linux-template` / `windows-template` submodule instead); the output extension differs.
 
 **Android companion:** the phone app is a separate
 [AnkiDroid](https://github.com/ankidroid/Anki-Android) fork that embeds this repo's Rust backend
@@ -122,6 +155,7 @@ Upstream Anki: <https://apps.ankiweb.net> · developer docs: <https://dev-docs.a
 contributors: [CONTRIBUTORS](./CONTRIBUTORS)
 
 ### Files this fork adds/changes on top of Anki
+
 - **New GMAT engine:** `proto/anki/gmat.proto`, `rslib/src/gmat/` (`mod.rs`, `service.rs`),
   registered in `rslib/src/lib.rs`.
 - **Desktop UI:** `qt/aqt/gmat.py` (dashboard, "GMAT MCQ" note type/template, practice pool), with
