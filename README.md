@@ -81,12 +81,12 @@ calibrated; the θ→score table is an approximate placeholder) and say so on sc
 Grab a ready-to-run installer from the [**Releases**](../../releases) page — no building required.
 Pick the file for your platform:
 
-| Platform | File |
-| --- | --- |
-| macOS (Apple Silicon) | `installer-macos-arm` → `.dmg` |
-| macOS (Intel) | `installer-macos-intel` → `.dmg` |
-| Windows | `.msi` |
-| Linux | `.tar.zst` bundle |
+| Platform              | File                             |
+| --------------------- | -------------------------------- |
+| macOS (Apple Silicon) | `installer-macos-arm` → `.dmg`   |
+| macOS (Intel)         | `installer-macos-intel` → `.dmg` |
+| Windows               | `.msi`                           |
+| Linux                 | `.tar.zst` bundle                |
 
 These are **unsigned fork builds**, so on first launch macOS Gatekeeper (right-click → Open) or
 Windows SmartScreen ("More info" → "Run anyway") may warn you — this is expected.

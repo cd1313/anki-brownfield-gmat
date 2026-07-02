@@ -18,6 +18,11 @@ run *args:
 run-optimized *args:
     {{ if os() == "windows" { "$env:RELEASE='1'; .\\run.bat" } else { "RELEASE=1 ./run" } }} {{ args }}
 
+# Run a local self-hosted sync server. Point desktop + phone at http://<your-lan-ip>:8080
+# (Preferences -> custom sync URL / AnkiDroid custom sync server). Default login demo/demo.
+sync-server user="demo" pass="demo":
+    {{ if os() == "windows" { "$env:SYNC_USER1='" + user + ":" + pass + "'; .\\run.bat --syncserver" } else { "SYNC_USER1='" + user + ":" + pass + "' ./run --syncserver" } }}
+
 # Watch web sources and rebuild/reload Anki's web stack on change (macOS/Linux)
 web-watch:
     ./tools/web-watch
