@@ -29,6 +29,95 @@ body.nightMode {
     color: var(--fg);
 }
 
+/* --- Card-deck look: a rounded card surface with a faint stack behind it,
+ * and a quick flip/turn-in whenever the content changes (question shown or
+ * answer revealed). One #qa element is reused, so this is a "turn to face
+ * you" flip rather than a two-faced 180deg flip. --- */
+#card-surface {
+    position: relative;
+    max-width: 46em;
+    margin: 24px auto;
+    perspective: 1200px;
+}
+
+/* A physical flashcard is paper-colored in any lighting, so the card keeps a
+ * warm light surface in BOTH light and dark mode. This also keeps note types
+ * that assume a white card (dark ink, colored text) readable in dark mode. */
+$card-paper: #fdf6ec;
+$card-ink: #241f1c;
+$card-edge: rgba(0, 0, 0, 0.1);
+
+/* the two stacked "cards" peeking out behind the top card */
+#card-surface::before,
+#card-surface::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: var(--border-radius-medium);
+    background: $card-paper;
+    border: 1px solid $card-edge;
+}
+#card-surface::before {
+    transform: translate(6px, 10px) scale(0.985);
+    opacity: 0.7;
+}
+#card-surface::after {
+    transform: translate(12px, 20px) scale(0.97);
+    opacity: 0.45;
+}
+
+#qa {
+    position: relative;
+    z-index: 1;
+    background: $card-paper;
+    color: $card-ink;
+    border: 1px solid $card-edge;
+    border-radius: var(--border-radius-medium);
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.28);
+    padding: 28px 30px;
+    min-height: 6em;
+    transform-origin: center;
+    backface-visibility: hidden;
+    // graceful fallback for the inline opacity toggle in index.ts
+    transition: opacity var(--transition) ease-out;
+}
+
+// keep the paper card even when a note type / night mode sets a dark card color
+body.nightMode #qa {
+    background: $card-paper;
+    color: $card-ink;
+}
+
+@keyframes flip-in {
+    from {
+        transform: rotateY(-90deg);
+        opacity: 0;
+    }
+    to {
+        transform: rotateY(0);
+        opacity: 1;
+    }
+}
+
+#qa.flip-in {
+    // `forwards` keeps opacity at 1 after the turn, so the card can't flash
+    // invisible if the inline opacity toggle in index.ts lands late.
+    animation: flip-in var(--transition-medium) ease-out forwards;
+}
+
+// The reviewer body never receives Anki's .reduce-motion class, so honor the
+// OS-level setting directly.
+@media (prefers-reduced-motion: reduce) {
+    #qa.flip-in {
+        animation: none;
+    }
+    #card-surface::before,
+    #card-surface::after {
+        display: none;
+    }
+}
+
 img {
     max-width: 100%;
     max-height: 95vh;

@@ -46,6 +46,31 @@ License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 <Container --gutter-block="1rem" --gutter-inline="2px" breakpoint="sm">
     <Col --col-justify="center">
         <div class="congrats">
+            <svg
+                class="mascot"
+                viewBox="0 0 120 120"
+                role="img"
+                aria-label="cat mascot"
+            >
+                <path d="M28 40 L24 12 L52 30 Z" fill="var(--fg)" />
+                <path d="M92 40 L96 12 L68 30 Z" fill="var(--fg)" />
+                <ellipse cx="60" cy="66" rx="42" ry="38" fill="var(--fg)" />
+                <circle cx="45" cy="60" r="10" fill="var(--canvas-elevated)" />
+                <circle cx="75" cy="60" r="10" fill="var(--canvas-elevated)" />
+                <circle cx="47" cy="62" r="5" fill="var(--fg)" />
+                <circle cx="73" cy="62" r="5" fill="var(--fg)" />
+                <path d="M56 74 L64 74 L60 80 Z" fill="var(--accent-card)" />
+                <g
+                    stroke="var(--canvas-elevated)"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                >
+                    <line x1="30" y1="72" x2="14" y2="68" />
+                    <line x1="30" y1="78" x2="14" y2="80" />
+                    <line x1="90" y1="72" x2="106" y2="68" />
+                    <line x1="90" y1="78" x2="106" y2="80" />
+                </g>
+            </svg>
             <h1>{congrats}</h1>
 
             <p>{nextLearnMsg}</p>
@@ -86,6 +111,13 @@ License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
         margin-top: 2em;
         max-width: 30em;
         font-size: var(--font-size);
+
+        .mascot {
+            display: block;
+            width: 96px;
+            height: 96px;
+            margin: 0 auto 0.5em;
+        }
 
         :global(a) {
             color: var(--fg-link);

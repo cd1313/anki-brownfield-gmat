@@ -10,6 +10,9 @@
 body {
     color: var(--fg);
     background: var(--canvas);
+    font-family:
+        Inter, "Familjen Grotesk", ui-rounded, "SF Pro Rounded", Nunito,
+        system-ui, -apple-system, "Segoe UI", sans-serif;
     margin: 1em;
     &.fancy {
         transition: opacity var(--transition-medium) ease-out;

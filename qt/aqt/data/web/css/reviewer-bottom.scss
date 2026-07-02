@@ -9,7 +9,7 @@
     --focus-color: #{palette-of(border-focus)};
 
     .isMac {
-        --focus-color: rgba(0 103 244 / 0.247);
+        --focus-color: rgba(249 135 111 / 0.35);
     }
 }
 
@@ -28,6 +28,26 @@ button {
     white-space: nowrap;
     margin: 9px;
     position: relative;
+    padding: 6px 16px;
+    border-radius: prop(border-radius-large);
+    border: 1px solid color(border);
+    background: color(button-bg);
+    color: color(fg);
+    transition:
+        background 120ms ease,
+        border-color 120ms ease;
+
+    &:hover:enabled {
+        border-color: color(accent-card);
+    }
+}
+
+/* the default answer (Good) gets a subtle coral outline instead of a filled
+ * pill, so it's gently emphasized without looking stuck/pressed */
+#defease {
+    border-color: color(accent-card);
+    color: color(accent-card);
+    font-weight: 600;
 }
 
 .hitem {
@@ -61,6 +81,10 @@ button {
     transform: translate(-50%, -100%);
     font-weight: normal;
     display: inline-block;
+    // these interval labels sit above the button on the bar, so give them the
+    // normal foreground color -- otherwise the label inside #defease inherits
+    // that button's white text and vanishes against the light bar.
+    color: color(fg);
 }
 
 .spacer {

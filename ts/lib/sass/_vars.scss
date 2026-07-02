@@ -22,19 +22,19 @@ $vars: (
             default: (
                 "Used to round corners of various UI elements",
                 (
-                    default: 5px,
+                    default: 10px,
                 ),
             ),
             medium: (
                 "Used for container corners",
                 (
-                    default: 12px,
+                    default: 18px,
                 ),
             ),
             large: (
                 "Used for pill-shaped buttons",
                 (
-                    default: 15px,
+                    default: 22px,
                 ),
             ),
         ),
@@ -72,36 +72,36 @@ $vars: (
             default: (
                 "Default text/icon color",
                 (
-                    light: palette(darkgray, 9),
-                    dark: palette(lightgray, 0),
+                    light: #1e1e1e,
+                    dark: palette(warmgray, 1),
                 ),
             ),
             subtle: (
                 "Placeholder text, icons in idle state",
                 (
-                    light: palette(darkgray, 0),
-                    dark: palette(lightgray, 9),
+                    light: palette(warmgray, 9),
+                    dark: palette(warmgray, 7),
                 ),
             ),
             disabled: (
                 "Foreground color of disabled UI elements",
                 (
-                    light: palette(lightgray, 9),
-                    dark: palette(darkgray, 0),
+                    light: palette(warmgray, 6),
+                    dark: palette(warmdark, 0),
                 ),
             ),
             faint: (
                 "Foreground color that barely stands out against canvas",
                 (
-                    light: palette(lightgray, 7),
-                    dark: palette(darkgray, 2),
+                    light: palette(warmgray, 7),
+                    dark: palette(warmdark, 1),
                 ),
             ),
             link: (
                 "Hyperlink foreground color",
                 (
-                    light: palette(blue, 7),
-                    dark: palette(blue, 2),
+                    light: palette(coral, 7),
+                    dark: palette(coral, 3),
                 ),
             ),
         ),
@@ -109,43 +109,43 @@ $vars: (
             default: (
                 "Window background",
                 (
-                    light: palette(lightgray, 2),
-                    dark: palette(darkgray, 5),
+                    light: palette(warmgray, 1),
+                    dark: palette(warmdark, 5),
                 ),
             ),
             elevated: (
                 "Background of containers",
                 (
-                    light: white,
-                    dark: palette(darkgray, 4),
+                    light: palette(warmgray, 0),
+                    dark: palette(warmdark, 4),
                 ),
             ),
             inset: (
                 "Background of inputs inside containers",
                 (
                     light: white,
-                    dark: palette(darkgray, 5),
+                    dark: palette(warmdark, 6),
                 ),
             ),
             overlay: (
                 "Background of floating elements (menus, tooltips)",
                 (
-                    light: palette(lightgray, 0),
-                    dark: palette(darkgray, 5),
+                    light: palette(warmgray, 0),
+                    dark: palette(warmdark, 4),
                 ),
             ),
             code: (
                 "Background of code editors",
                 (
                     light: white,
-                    dark: palette(darkgray, 6),
+                    dark: palette(warmdark, 6),
                 ),
             ),
             glass: (
                 "Transparent background for surfaces containing text",
                 (
                     light: color.scale(white, $alpha: -60%),
-                    dark: color.scale(palette(darkgray, 4), $alpha: -60%),
+                    dark: color.scale(palette(warmdark, 4), $alpha: -60%),
                 ),
             ),
         ),
@@ -153,29 +153,29 @@ $vars: (
             default: (
                 "Border color with medium contrast against window background",
                 (
-                    light: palette(lightgray, 6),
-                    dark: palette(darkgray, 7),
+                    light: palette(warmgray, 5),
+                    dark: palette(warmdark, 3),
                 ),
             ),
             subtle: (
                 "Border color with low contrast against window background",
                 (
-                    light: palette(lightgray, 4),
-                    dark: palette(darkgray, 6),
+                    light: palette(warmgray, 4),
+                    dark: palette(warmdark, 4),
                 ),
             ),
             strong: (
                 "Border color with high contrast against window background",
                 (
-                    light: palette(lightgray, 9),
-                    dark: palette(darkgray, 9),
+                    light: palette(warmgray, 8),
+                    dark: palette(warmdark, 1),
                 ),
             ),
             focus: (
                 "Border color of focused input elements",
                 (
-                    light: palette(blue, 5),
-                    dark: palette(blue, 5),
+                    light: palette(coral, 4),
+                    dark: palette(coral, 5),
                 ),
             ),
         ),
@@ -183,8 +183,8 @@ $vars: (
             bg: (
                 "Background color of buttons",
                 (
-                    light: palette(lightgray, 0),
-                    dark: color.scale(palette(darkgray, 4), $lightness: 5%),
+                    light: palette(warmgray, 0),
+                    dark: color.scale(palette(warmdark, 4), $lightness: 5%),
                 ),
             ),
             gradient: (
@@ -192,14 +192,14 @@ $vars: (
                     "Start value of default button gradient",
                     (
                         light: white,
-                        dark: color.scale(palette(darkgray, 4), $lightness: 10%),
+                        dark: color.scale(palette(warmdark, 4), $lightness: 10%),
                     ),
                 ),
                 end: (
                     "End value of default button gradient",
                     (
-                        light: palette(lightgray, 0),
-                        dark: color.scale(palette(darkgray, 4), $lightness: 5%),
+                        light: palette(warmgray, 2),
+                        dark: color.scale(palette(warmdark, 4), $lightness: 5%),
                     ),
                 ),
             ),
@@ -207,47 +207,47 @@ $vars: (
                 border: (
                     "Border color of default button in hover state",
                     (
-                        light: palette(lightgray, 8),
-                        dark: palette(darkgray, 8),
+                        light: palette(coral, 3),
+                        dark: palette(coral, 7),
                     ),
                 ),
             ),
             disabled: (
                 "Background color of disabled button",
                 (
-                    light: color.scale(palette(lightgray, 5), $alpha: -50%),
-                    dark: color.scale(palette(darkgray, 3), $alpha: -50%),
+                    light: color.scale(palette(warmgray, 5), $alpha: -50%),
+                    dark: color.scale(palette(warmdark, 3), $alpha: -50%),
                 ),
             ),
             primary: (
                 bg: (
                     "Background color of primary button",
                     (
-                        light: color.scale(palette(blue, 6), $lightness: 5%),
-                        dark: color.scale(palette(blue, 7), $saturation: -10%),
+                        light: palette(coral, 5),
+                        dark: color.scale(palette(coral, 6), $saturation: -10%),
                     ),
                 ),
                 gradient: (
                     start: (
                         "Start value of primary button gradient",
                         (
-                            light: palette(blue, 5),
-                            dark: color.scale(palette(blue, 6), $saturation: -10%),
+                            light: palette(coral, 4),
+                            dark: color.scale(palette(coral, 5), $saturation: -10%),
                         ),
                     ),
                     end: (
                         "End value of primary button gradient",
                         (
-                            light: color.scale(palette(blue, 6), $lightness: 5%),
-                            dark: color.scale(palette(blue, 7), $saturation: -10%),
+                            light: palette(coral, 5),
+                            dark: color.scale(palette(coral, 6), $saturation: -10%),
                         ),
                     ),
                 ),
                 disabled: (
                     "Background color of primary button in disabled state",
                     (
-                        light: palette(blue, 3),
-                        dark: color.scale(palette(blue, 5), $saturation: -10%),
+                        light: palette(coral, 2),
+                        dark: color.scale(palette(coral, 4), $saturation: -10%),
                     ),
                 ),
             ),
@@ -257,22 +257,22 @@ $vars: (
                 default: (
                     "Background of scrollbar in idle state (Win/Lin only)",
                     (
-                        light: palette(lightgray, 5),
-                        dark: palette(darkgray, 3),
+                        light: palette(warmgray, 5),
+                        dark: palette(warmdark, 2),
                     ),
                 ),
                 hover: (
                     "Background of scrollbar in hover state (Win/Lin only)",
                     (
-                        light: palette(lightgray, 6),
-                        dark: palette(darkgray, 2),
+                        light: palette(warmgray, 6),
+                        dark: palette(warmdark, 1),
                     ),
                 ),
                 active: (
                     "Background of scrollbar in pressed state (Win/Lin only)",
                     (
-                        light: palette(lightgray, 7),
-                        dark: palette(darkgray, 1),
+                        light: palette(warmgray, 7),
+                        dark: palette(warmdark, 0),
                     ),
                 ),
             ),
@@ -281,28 +281,28 @@ $vars: (
             default: (
                 "Default box-shadow color",
                 (
-                    light: palette(lightgray, 6),
-                    dark: palette(darkgray, 8),
+                    light: palette(warmgray, 6),
+                    dark: palette(warmdark, 8),
                 ),
             ),
             inset: (
                 "Inset box-shadow color",
                 (
-                    light: palette(darkgray, 3),
-                    dark: palette(darkgray, 7),
+                    light: palette(warmgray, 7),
+                    dark: palette(warmdark, 7),
                 ),
             ),
             subtle: (
                 "Box-shadow color with lower contrast against window background",
                 (
-                    light: palette(darkgray, 0),
-                    dark: palette(darkgray, 4),
+                    light: palette(warmgray, 3),
+                    dark: palette(warmdark, 4),
                 ),
             ),
             focus: (
                 "Box-shadow color for elements in focused state",
                 (
-                    default: palette(indigo, 5),
+                    default: palette(coral, 4),
                 ),
             ),
         ),
@@ -310,8 +310,8 @@ $vars: (
             card: (
                 "Accent color for cards",
                 (
-                    light: palette(blue, 4),
-                    dark: palette(blue, 3),
+                    light: palette(coral, 5),
+                    dark: palette(coral, 4),
                 ),
             ),
             note: (
@@ -384,8 +384,8 @@ $vars: (
             new: (
                 "Accent color for new cards",
                 (
-                    light: palette(blue, 5),
-                    dark: palette(blue, 3),
+                    light: palette(coral, 5),
+                    dark: palette(coral, 3),
                 ),
             ),
             learn: (
@@ -428,8 +428,8 @@ $vars: (
             bg: (
                 "Background color of highlighted items",
                 (
-                    light: color.scale(palette(blue, 6), $alpha: -50%),
-                    dark: color.scale(palette(blue, 3), $alpha: -50%),
+                    light: color.scale(palette(coral, 5), $alpha: -50%),
+                    dark: color.scale(palette(coral, 4), $alpha: -50%),
                 ),
             ),
             fg: (
@@ -444,8 +444,8 @@ $vars: (
             bg: (
                 "Background color of selected text",
                 (
-                    light: color.scale(palette(lightgray, 5), $alpha: -50%),
-                    dark: color.scale(palette(blue, 3), $alpha: -50%),
+                    light: color.scale(palette(coral, 3), $alpha: -50%),
+                    dark: color.scale(palette(coral, 5), $alpha: -50%),
                 ),
             ),
             fg: (

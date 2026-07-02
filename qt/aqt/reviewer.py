@@ -343,7 +343,7 @@ class Reviewer:
 <div id="_mark" hidden>&#x2605;</div>
 <div id="_flag" hidden>&#x2691;</div>
 {fade}
-<div id="qa" dir="auto"></div>
+<div id="card-surface"><div id="qa" dir="auto"></div></div>
 {extra}
 """
 

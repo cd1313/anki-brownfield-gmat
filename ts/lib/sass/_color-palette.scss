@@ -6,6 +6,58 @@
  * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 $color-palette: (
+    /* Warm "peach focus" ramps for the calming pastel theme.
+     * coral = primary (anchored at 5 = #f9876f), rose = secondary,
+     * warmgray = warm neutral canvas/borders for light mode,
+     * warmdark = cozy warm taupe neutrals for dark mode. */
+    coral: (
+        0: #fff1ec,
+        1: #ffe0d6,
+        2: #ffc9b8,
+        3: #ffab92,
+        4: #fc9680,
+        5: #f9876f,
+        6: #ef6f54,
+        7: #d85a40,
+        8: #b34732,
+        9: #8f3928,
+    ),
+    rose: (
+        0: #fdf1f2,
+        1: #fbe1e3,
+        2: #f6c8cc,
+        3: #eeaab0,
+        4: #e38c92,
+        5: #d5747b,
+        6: #c05a62,
+        7: #a3474e,
+        8: #843a40,
+        9: #683033,
+    ),
+    warmgray: (
+        0: #fffcfa,
+        1: #fff8f4,
+        2: #fbf3ee,
+        3: #f5eae3,
+        4: #ecdfd7,
+        5: #ddcfc6,
+        6: #c9bab0,
+        7: #b0a099,
+        8: #8f827c,
+        9: #6b615c,
+    ),
+    warmdark: (
+        0: #8a807b,
+        1: #6b615c,
+        2: #554d49,
+        3: #443d3a,
+        4: #332d2a,
+        5: #2a2421,
+        6: #221d1b,
+        7: #1b1715,
+        8: #120f0e,
+        9: #0a0807,
+    ),
     lightgray: (
         0: #fcfcfc,
         1: #fafafa,

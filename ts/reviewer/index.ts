@@ -135,12 +135,19 @@ export async function _updateQA(
     await preloadResources(html);
 
     qa.style.opacity = "0";
+    // reset the flip animation so it retriggers on the new content below
+    qa.classList.remove("flip-in");
+    // force a reflow so re-adding the class restarts the animation
+    void qa.offsetWidth;
 
     try {
         await setInnerHTML(qa, html);
     } catch (error) {
         await setInnerHTML(qa, renderError("html")(error));
     }
+
+    // play the card turn/flip on the freshly-swapped content
+    qa.classList.add("flip-in");
 
     await _runHook(onUpdateHook);
 

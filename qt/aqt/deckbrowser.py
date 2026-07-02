@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import html
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import aqt
@@ -35,6 +35,15 @@ class DeckBrowserBottomBar:
 
 
 @dataclass
+class GmatSectionStat:
+    """One GMAT section's headline numbers for the dashboard hero."""
+
+    label: str
+    mastery: float | None  # 0..1 term-recall coverage, or None if not enough data
+    readiness: float | None  # projected section score, or None
+
+
+@dataclass
 class RenderData:
     """Data from collection that is required to show the page."""
 
@@ -42,6 +51,8 @@ class RenderData:
     current_deck_id: DeckId
     studied_today: str
     sched_upgrade_required: bool
+    total_due: int = 0
+    gmat: list[GmatSectionStat] = field(default_factory=list)
 
 
 @dataclass
@@ -52,15 +63,62 @@ class DeckBrowserContent:
     Attributes:
         tree {str} -- HTML of the deck tree section
         stats {str} -- HTML of the stats section
+        hero {str} -- HTML of the dashboard hero (mascot, summary, upload)
     """
 
     tree: str
     stats: str
+    hero: str = ""
 
 
 @dataclass
 class RenderDeckNodeContext:
     current_deck_id: DeckId
+
+
+def _collect_gmat_stats(col: Collection) -> list[GmatSectionStat]:
+    """Per-section GMAT mastery + readiness for the dashboard hero. Returns []
+    for non-GMAT collections or when nothing is scored yet, so the hero can
+    hide the block. Never raises — the dashboard must render regardless."""
+    try:
+        from aqt import gmat as g
+
+        memory = {
+            t.topic: t
+            for t in col._backend.get_topic_mastery(
+                search=g.TERMS_SEARCH,
+                tag_prefix=g.TAG_PREFIX,
+                r_threshold=g.R_THRESHOLD,
+                time_budget_secs=g.TIME_BUDGET_SECS,
+                min_reviews=g.MIN_REVIEWS,
+                min_cards=g.MIN_CARDS,
+            )
+        }
+        readiness = {
+            s.section: s
+            for s in col._backend.estimate_readiness(
+                search=g.PRACTICE_SEARCH,
+                tag_prefix=g.TAG_PREFIX,
+                time_budget_secs=g.PRACTICE_TIME_BUDGET_SECS,
+                section_minutes=g.SECTION_MINUTES,
+                min_responses=g.PERF_MIN_RESPONSES,
+                min_coverage=g.PERF_MIN_COVERAGE,
+                max_se=g.PERF_MAX_SE,
+            )
+        }
+        out: list[GmatSectionStat] = []
+        for topic, label in g.SECTIONS:
+            t = memory.get(topic)
+            s = readiness.get(topic)
+            mastery = t.category_score if (t and t.has_score) else None
+            score = s.score if (s and s.has_score) else None
+            if mastery is not None or score is not None:
+                out.append(
+                    GmatSectionStat(label=label, mastery=mastery, readiness=score)
+                )
+        return out
+    except Exception:
+        return []
 
 
 class DeckBrowser:
@@ -144,8 +202,30 @@ class DeckBrowser:
     # HTML generation
     ##########################################################################
 
+    # Friendly cat mascot; colors follow the theme via CSS custom properties.
+    _mascot = """
+<svg class="mascot" viewBox="0 0 120 120" role="img" aria-label="cat mascot"
+     width="72" height="72">
+  <path d="M28 40 L24 12 L52 30 Z" fill="var(--fg)"/>
+  <path d="M92 40 L96 12 L68 30 Z" fill="var(--fg)"/>
+  <ellipse cx="60" cy="66" rx="42" ry="38" fill="var(--fg)"/>
+  <circle cx="45" cy="60" r="10" fill="var(--canvas-elevated)"/>
+  <circle cx="75" cy="60" r="10" fill="var(--canvas-elevated)"/>
+  <circle cx="47" cy="62" r="5" fill="var(--fg)"/>
+  <circle cx="73" cy="62" r="5" fill="var(--fg)"/>
+  <path d="M56 74 L64 74 L60 80 Z" fill="var(--accent-card)"/>
+  <g stroke="var(--canvas-elevated)" stroke-width="2" stroke-linecap="round">
+    <line x1="30" y1="72" x2="14" y2="68"/>
+    <line x1="30" y1="78" x2="14" y2="80"/>
+    <line x1="90" y1="72" x2="106" y2="68"/>
+    <line x1="90" y1="78" x2="106" y2="80"/>
+  </g>
+</svg>
+"""
+
     _body = """
 <center>
+%(hero)s
 <table cellspacing=0 cellpadding=3>
 %(tree)s
 </table>
@@ -159,11 +239,18 @@ class DeckBrowser:
         if not reuse:
 
             def get_data(col: Collection) -> RenderData:
+                tree = col.sched.deck_due_tree()
+                total_due = sum(
+                    child.new_count + child.learn_count + child.review_count
+                    for child in tree.children
+                )
                 return RenderData(
-                    tree=col.sched.deck_due_tree(),
+                    tree=tree,
                     current_deck_id=col.decks.get_current_id(),
                     studied_today=col.studied_today(),
                     sched_upgrade_required=not col.v3_scheduler(),
+                    total_due=total_due,
+                    gmat=_collect_gmat_stats(col),
                 )
 
             def success(output: RenderData) -> None:
@@ -183,6 +270,7 @@ class DeckBrowser:
         content = DeckBrowserContent(
             tree=self._renderDeckTree(data.tree),
             stats=self._renderStats(),
+            hero=self._renderHero(),
         )
         gui_hooks.deck_browser_will_render_content(self, content)
         self.web.stdHtml(
@@ -208,6 +296,55 @@ class DeckBrowser:
         return '<div id="studiedToday"><span>{}</span></div>'.format(
             self._render_data.studied_today
         )
+
+    def _renderHero(self) -> str:
+        data = self._render_data
+        deck_count = len(data.tree.children)
+        # summary chips
+        chips = (
+            f'<div class="chip"><div class="chip-num">{data.total_due}</div>'
+            f'<div class="chip-label">due today</div></div>'
+            f'<div class="chip"><div class="chip-num">{deck_count}</div>'
+            f'<div class="chip-label">{"deck" if deck_count == 1 else "decks"}</div></div>'
+        )
+        # optional GMAT section mastery / readiness
+        gmat_html = ""
+        if data.gmat:
+            cards = ""
+            for s in data.gmat:
+                mastery_pct = (
+                    f"{s.mastery * 100:.0f}%" if s.mastery is not None else "—"
+                )
+                fill = int((s.mastery or 0) * 100)
+                score = f"{s.readiness:.0f}" if s.readiness is not None else "—"
+                cards += (
+                    f'<div class="gmat-card">'
+                    f'<div class="gmat-sec">{html.escape(s.label)}</div>'
+                    f'<div class="gmat-bar"><div class="gmat-bar-fill" '
+                    f'style="width:{fill}%"></div></div>'
+                    f'<div class="gmat-nums"><span>Mastery {mastery_pct}</span>'
+                    f"<span>Readiness {score}</span></div>"
+                    f"</div>"
+                )
+            gmat_html = f'<div class="gmat-strip">{cards}</div>'
+
+        upload = (
+            '<a class="upload-btn" href=# onclick="return pycmd(\'import\')">'
+            "&#x2191; Upload deck</a>"
+        )
+        return f"""
+<div class="hero">
+  <div class="hero-top">
+    {self._mascot}
+    <div class="hero-info">
+      <div class="hero-title">Welcome back</div>
+      <div class="hero-chips">{chips}</div>
+    </div>
+    <div class="hero-actions">{upload}</div>
+  </div>
+  {gmat_html}
+</div>
+"""
 
     def _renderDeckTree(self, top: DeckTreeNode) -> str:
         buf = """
@@ -267,12 +404,13 @@ class DeckBrowser:
         buf += """
 
         <td class=decktd colspan=5>%s%s<a class="deck %s"
-        href=# onclick="return pycmd('open:%d')">%s</a></td>""" % (
+        href=# onclick="return pycmd('open:%d')">%s</a>%s</td>""" % (
             indent(),
             collapse,
             extraclass,
             node.deck_id,
             html.escape(node.name),
+            self._progress_bar(node),
         )
 
         # due counts
@@ -299,6 +437,29 @@ class DeckBrowser:
             for child in node.children:
                 buf += self._render_deck_node(child, ctx)
         return buf
+
+    def _progress_bar(self, node: DeckTreeNode) -> str:
+        """A thin bar under the deck name showing the new/learn/review mix of
+        what's due. Universal (uses counts already on the node); hidden when the
+        deck has nothing due."""
+        n, lrn, rev = node.new_count, node.learn_count, node.review_count
+        total = n + lrn + rev
+        if total <= 0:
+            return ""
+        return (
+            '<div class="deck-progress" title="{n} new · {l} learning · {r} to review">'
+            '<span class="pb pb-new" style="width:{np:.1f}%"></span>'
+            '<span class="pb pb-learn" style="width:{lp:.1f}%"></span>'
+            '<span class="pb pb-review" style="width:{rp:.1f}%"></span>'
+            "</div>"
+        ).format(
+            n=n,
+            l=lrn,
+            r=rev,
+            np=n / total * 100,
+            lp=lrn / total * 100,
+            rp=rev / total * 100,
+        )
 
     def _topLevelDragRow(self) -> str:
         return "<tr class='top-level-drag-row'><td colspan='6'>&nbsp;</td></tr>"

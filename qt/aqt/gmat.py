@@ -19,7 +19,9 @@ import json
 import time
 
 import aqt
+from aqt import colors, props
 from aqt.qt import *
+from aqt.theme import theme_manager
 from aqt.utils import disable_help_button, restoreGeom, saveGeom, tooltip
 
 # Give-up rule + mastery thresholds (see PRD "Thresholds" open task; tweak freely).
@@ -110,8 +112,42 @@ class GmatReadinessDialog(QDialog):
         qconnect(close.clicked, self.close)
         layout.addWidget(buttons)
 
+        self._apply_style()
         restoreGeom(self, "GmatReadinessDialog", default_size=(760, 640))
         self.refresh()
+
+    def _apply_style(self) -> None:
+        """Warm pastel skin for the dashboard's raw Qt widgets (they don't pick
+        up the web CSS tokens, so resolve the shared theme tokens here)."""
+        v = theme_manager.var
+        surface = v(colors.CANVAS_ELEVATED)
+        border = v(colors.BORDER_SUBTLE)
+        fg = v(colors.FG)
+        subtle = v(colors.FG_SUBTLE)
+        accent = v(colors.ACCENT_CARD)
+        radius = v(props.BORDER_RADIUS_MEDIUM)
+        self.status_label.setObjectName("gmatStatus")
+        self.setStyleSheet(
+            f"""
+            QLabel {{ color: {fg}; }}
+            QTableWidget {{
+                background: {surface};
+                border: 1px solid {border};
+                border-radius: {radius};
+                gridline-color: {border};
+                color: {fg};
+            }}
+            QTableWidget::item {{ padding: 4px 8px; }}
+            QHeaderView::section {{
+                background: {accent};
+                color: #ffffff;
+                padding: 6px 10px;
+                border: none;
+                font-weight: 600;
+            }}
+            #gmatStatus {{ color: {subtle}; }}
+            """
+        )
 
     def _add_table(
         self, layout: QVBoxLayout, title: str, headers: list[str]
@@ -389,18 +425,34 @@ _MCQ_BACK = """\
 """
 
 _MCQ_CSS = """\
-.card { font-family: arial; font-size: 18px; text-align: left; }
-.gmat-q { font-weight: bold; margin-bottom: 12px; }
-.gmat-opts { display: flex; flex-direction: column; gap: 8px; }
-.gmat-opt { text-align: left; padding: 8px 12px; border: 1px solid #ccc;
-            border-radius: 6px; cursor: pointer; font-size: 16px;
-            /* force readable contrast in both light and night mode */
-            background: #f8f8f8 !important; color: #222 !important; }
-.gmat-opt:hover:enabled { background: #eef !important; }
-.gmat-correct { background: #c8e6c9 !important; border-color: #2e7d32 !important; }
-.gmat-wrong { background: #ffcdd2 !important; border-color: #c62828 !important; }
-#gmat-status { margin: 12px 0; font-weight: bold; }
-#gmat-continue { padding: 8px 16px; font-size: 16px; }
+.card { font-family: Inter, "Familjen Grotesk", system-ui, -apple-system, sans-serif;
+        font-size: 18px; text-align: left; }
+.gmat-q { font-weight: 600; margin-bottom: 16px; line-height: 1.5; }
+.gmat-opts { display: flex; flex-direction: column; gap: 10px; }
+/* Follow the app theme via the reviewer's CSS custom properties, with warm
+ * pastel fallbacks so the card stays readable even if a var is missing. */
+/* The reviewer card is always a warm "paper" surface (light in both themes),
+ * so options use fixed light styling rather than the theme vars. */
+.gmat-opt { text-align: left; padding: 12px 16px;
+            border: 1.5px solid #e3d7ca;
+            border-radius: var(--border-radius, 12px);
+            cursor: pointer; font-size: 16px; line-height: 1.4;
+            background: #f4ece1 !important;
+            color: #241f1c !important;
+            transition: background 120ms ease, border-color 120ms ease; }
+.gmat-opt:hover:enabled { border-color: #f9876f;
+            background: rgba(249, 135, 111, 0.12) !important; }
+/* translucent tints read well over both light and dark backgrounds */
+.gmat-correct { background: rgba(74, 222, 128, 0.22) !important;
+            border-color: #4ade80 !important; }
+.gmat-wrong { background: rgba(227, 140, 146, 0.30) !important;
+            border-color: #d5747b !important; }
+#gmat-status { margin: 16px 0; font-weight: 700; font-size: 17px; }
+#gmat-continue { padding: 10px 22px; font-size: 16px; font-weight: 600;
+            color: #fff; border: none; cursor: pointer;
+            background: var(--button-primary-bg, #f9876f);
+            border-radius: var(--border-radius-large, 22px); }
+#gmat-continue:hover { filter: brightness(1.05); }
 """
 
 

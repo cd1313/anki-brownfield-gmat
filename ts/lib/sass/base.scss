@@ -44,7 +44,12 @@ html {
 }
 
 body {
-    font-family: inherit;
+    // Friendly, softly-rounded stack. Prefers Inter / Familjen Grotesk if the
+    // user has them, then the platform's rounded UI face (SF Pro Rounded on
+    // Apple via ui-rounded), then a normal system fallback.
+    font-family:
+        Inter, "Familjen Grotesk", ui-rounded, "SF Pro Rounded", Nunito,
+        system-ui, -apple-system, "Segoe UI", sans-serif;
     overflow-x: hidden;
     &:not(.isMac),
     &:not(.isMac) * {
