@@ -1,0 +1,227 @@
+name: Fork Release (unsigned)
+run-name: "Fork release ${{ inputs.version || github.ref_name }}"
+
+# Fork-friendly release pipeline: builds UNSIGNED installers for macOS, Windows,
+# and Linux, then publishes them to a GitHub Release so users can download a
+# ready-to-run installer without building anything locally.
+#
+# This is intentionally separate from release.yml (the upstream pipeline), which
+# requires Apple/Azure code-signing secrets this fork does not have. Because the
+# artifacts are unsigned, macOS Gatekeeper and Windows SmartScreen will warn on
+# first launch (right-click > Open on macOS; "More info" > "Run anyway" on
+# Windows). That is expected for a fork build.
+#
+# Two ways to trigger:
+#   1. Push a tag:            git tag v26.05 && git push origin v26.05
+#   2. Actions tab > this workflow > "Run workflow", enter a version like 26.05
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version label for the release (defaults to the .version file)"
+        required: false
+        type: string
+      draft:
+        description: "Create the release as a draft (review before it goes public)"
+        default: false
+        required: false
+        type: boolean
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  # Build profile: 2 = ReleaseWithLto (see build/ninja_gen/src/build.rs)
+  RELEASE: 2
+  N2_OUTPUT_PROGRESS: "1"
+  N2_OUTPUT_SUCCESS: "1"
+
+concurrency:
+  group: fork-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Resolve the version once so every build job and the release agree on it.
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 #v4
+
+      - name: Resolve version and tag
+        id: resolve
+        run: |
+          file_version=$(cat .version)
+          if [ -n "$INPUT_VERSION" ]; then
+            version="$INPUT_VERSION"
+          elif [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            # Strip a leading "v" from the tag (v26.05 -> 26.05)
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$file_version"
+          fi
+
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="v${version}"
+          fi
+
+          echo "Resolved version=$version tag=$tag"
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          GITHUB_REF_TYPE: ${{ github.ref_type }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+
+  build-macos-arm:
+    needs: prepare
+    runs-on: macos-14
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 #v4
+      - name: Setup build environment
+        uses: ./.github/actions/setup-anki
+      - name: Build unsigned installer
+        run: ./tools/build-installer
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 #v4
+        with:
+          name: installer-macos-arm
+          path: out/installer/dist/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 #v4
+        if: always()
+        with:
+          name: logs-macos-arm
+          path: out/installer/logs/
+
+  build-macos-intel:
+    needs: prepare
+    runs-on: macos-15-intel
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 #v4
+      - name: Setup build environment
+        uses: ./.github/actions/setup-anki
+      - name: Build unsigned installer
+        run: ./tools/build-installer
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 #v4
+        with:
+          name: installer-macos-intel
+          path: out/installer/dist/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 #v4
+        if: always()
+        with:
+          name: logs-macos-intel
+          path: out/installer/logs/
+
+  build-windows:
+    needs: prepare
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 #v4
+      - name: Setup build environment
+        uses: ./.github/actions/setup-anki
+      - name: Build app
+        run: tools\ninja installer:build
+      - name: Package installer
+        run: out\pyenv\scripts\python.exe qt\tools\build_installer.py --version ${{ needs.prepare.outputs.version }} package
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 #v4
+        with:
+          name: installer-windows
+          path: out/installer/dist/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 #v4
+        if: always()
+        with:
+          name: logs-windows
+          path: out/installer/logs/
+
+  build-linux-x86:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 #v4
+      - name: Setup build environment
+        uses: ./.github/actions/setup-anki
+      - name: Build and install fcitx5-qt for bundling
+        run: |
+          sudo apt-get install --yes --no-install-recommends \
+            cmake extra-cmake-modules \
+            libfcitx5core-dev \
+            qt6-base-dev \
+            qt6-base-private-dev \
+            libgl-dev \
+            libxkbcommon-dev \
+            libx11-dev \
+            gettext \
+            patchelf
+          git clone --depth 1 --branch 5.0.10 \
+            https://github.com/fcitx/fcitx5-qt.git /tmp/fcitx5-qt
+          cmake -S /tmp/fcitx5-qt -B /tmp/fcitx5-qt-build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_QT4=no \
+            -DENABLE_QT5=no \
+            -DENABLE_QT6=yes \
+            -DCMAKE_INSTALL_PREFIX=/usr
+          cmake --build /tmp/fcitx5-qt-build -j$(nproc)
+          sudo cmake --install /tmp/fcitx5-qt-build
+      - name: Build unsigned installer
+        run: ./tools/build-installer
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 #v4
+        with:
+          name: installer-linux-x86
+          path: out/installer/dist/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 #v4
+        if: always()
+        with:
+          name: logs-linux-x86
+          path: out/installer/logs/
+
+  release:
+    needs: [prepare, build-macos-arm, build-macos-intel, build-windows, build-linux-x86]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 #v4
+        with:
+          pattern: installer-*
+          path: dist
+          merge-multiple: true
+
+      - name: List collected installers
+        run: ls -R dist
+
+      - name: Publish GitHub release
+        run: |
+          draft_flag=""
+          if [ "$DRAFT" = "true" ]; then
+            draft_flag="--draft"
+          fi
+
+          # Recreate cleanly if a release for this tag already exists.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes --cleanup-tag
+          fi
+
+          gh release create "$TAG" \
+            dist/* \
+            --target "$GITHUB_SHA" \
+            --title "$VERSION" \
+            --generate-notes \
+            --notes "Unsigned fork build. On macOS, right-click the app and choose Open on first launch; on Windows, click \"More info\" then \"Run anyway\" if SmartScreen appears." \
+            ${draft_flag:+"$draft_flag"}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          DRAFT: ${{ inputs.draft }}
+          GITHUB_SHA: ${{ github.sha }}
