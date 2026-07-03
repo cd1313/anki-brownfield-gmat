@@ -267,12 +267,13 @@ impl Collection {
         .map(Into::into)
     }
 
-    /// Record one graded attempt (from any grader, e.g. AI semantic grading of a
-    /// typed `GMAT::Terms` answer) as a non-scheduling revlog entry, so the IRT
-    /// performance model has response data. Undo-aware. Generalises the MCQ-only
-    /// [`Collection::record_mcq_attempt`]; correctness/latency are encoded the
-    /// same way (see its docs), so these entries flow into the same IRT reader
-    /// via [`RevlogEntry::is_cramming`] and sync as ordinary revlog rows.
+    /// Record one graded attempt (from any grader, e.g. AI semantic grading of
+    /// a typed `GMAT::Terms` answer) as a non-scheduling revlog entry, so
+    /// the IRT performance model has response data. Undo-aware. Generalises
+    /// the MCQ-only [`Collection::record_mcq_attempt`]; correctness/latency
+    /// are encoded the same way (see its docs), so these entries flow into
+    /// the same IRT reader via [`RevlogEntry::is_cramming`] and sync as
+    /// ordinary revlog rows.
     pub(crate) fn record_graded_attempt_impl(
         &mut self,
         input: anki_proto::gmat::RecordGradedAttemptRequest,

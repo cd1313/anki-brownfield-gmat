@@ -1,0 +1,69 @@
+term,expected_definition,student_answer,gold_verdict,gold_rating,band
+Prime number,"A whole number greater than 1 whose only positive divisors are 1 and itself.","A number bigger than 1 that has exactly two factors, 1 and itself.",correct,easy,strong
+Prime number,"A whole number greater than 1 whose only positive divisors are 1 and itself.","A number whose only factors are 1 and itself, like 7.",correct,good,lenient
+Prime number,"A whole number greater than 1 whose only positive divisors are 1 and itself.","A number that can't be divided evenly.",partial,hard,partial
+Prime number,"A whole number greater than 1 whose only positive divisors are 1 and itself.","Any odd number.",incorrect,again,wrong
+Median,"The middle value of a data set when the values are ordered; for an even count, the average of the two middle values.","The middle number when you sort the data, averaging the two middle ones if the count is even.",correct,easy,strong
+Median,"The middle value of a data set when the values are ordered; for an even count, the average of the two middle values.","The middle value of a sorted list.",correct,good,lenient
+Median,"The middle value of a data set when the values are ordered; for an even count, the average of the two middle values.","A kind of average in the middle.",partial,hard,partial
+Median,"The middle value of a data set when the values are ordered; for an even count, the average of the two middle values.","The most frequent value in the data.",incorrect,again,wrong
+Median,"The middle value of a data set when the values are ordered; for an even count, the average of the two middle values.","",incorrect,again,blank
+Standard deviation,"A measure of how spread out data values are around the mean.","How much the values typically differ from the average — a measure of spread.",correct,easy,strong
+Standard deviation,"A measure of how spread out data values are around the mean.","How spread out the numbers are.",correct,good,lenient
+Standard deviation,"A measure of how spread out data values are around the mean.","Something about how the data varies.",partial,hard,partial
+Standard deviation,"A measure of how spread out data values are around the mean.","It is the total range of the data, found by subtracting the smallest value from the largest to show how spread out everything is.",incorrect,again,confidently_wrong
+Greatest common divisor,"The largest positive integer that divides two or more integers without a remainder.","The biggest number that divides both numbers evenly.",correct,easy,strong
+Greatest common divisor,"The largest positive integer that divides two or more integers without a remainder.","The largest factor shared by the numbers.",correct,good,lenient
+Greatest common divisor,"The largest positive integer that divides two or more integers without a remainder.","A number that divides both.",partial,hard,partial
+Greatest common divisor,"The largest positive integer that divides two or more integers without a remainder.","The smallest number that both numbers divide into.",incorrect,again,wrong
+Ratio,"A comparison of two quantities showing how many times one contains the other.","A comparison of two amounts, such as 3 to 2.",correct,easy,strong
+Ratio,"A comparison of two quantities showing how many times one contains the other.","How two quantities relate in size.",correct,good,lenient
+Ratio,"A comparison of two quantities showing how many times one contains the other.","Two numbers written together.",partial,hard,partial
+Ratio,"A comparison of two quantities showing how many times one contains the other.","The total of two quantities added up.",incorrect,again,wrong
+Absolute value,"The distance of a number from zero on the number line; always non-negative.","How far a number is from zero, so it is never negative.",correct,easy,strong
+Absolute value,"The distance of a number from zero on the number line; always non-negative.","A number's distance from zero.",correct,good,lenient
+Absolute value,"The distance of a number from zero on the number line; always non-negative.","Making a number positive.",partial,hard,partial
+Absolute value,"The distance of a number from zero on the number line; always non-negative.","The value of a number after squaring it.",incorrect,again,wrong
+Permutation,"An arrangement of items in which order matters.","An ordered arrangement of items, where order matters.",correct,easy,strong
+Permutation,"An arrangement of items in which order matters.","Ways to arrange things where the order counts.",correct,good,lenient
+Permutation,"An arrangement of items in which order matters.","A way of arranging a set of things.",partial,hard,partial
+Permutation,"An arrangement of items in which order matters.","It is the number of ways to pick a group of items from a larger set when the order of selection does not matter.",incorrect,again,confidently_wrong
+Weighted average,"An average in which some values count more than others according to assigned weights.","An average where each value is multiplied by a weight reflecting its importance.",correct,easy,strong
+Weighted average,"An average in which some values count more than others according to assigned weights.","An average where some values matter more than others.",correct,good,lenient
+Weighted average,"An average in which some values count more than others according to assigned weights.","An average of averages.",partial,hard,partial
+Weighted average,"An average in which some values count more than others according to assigned weights.","The middle value of the data.",incorrect,again,wrong
+Parallelism,"Using the same grammatical form for items in a series or comparison.","Items in a list or comparison should share the same grammatical form.",correct,easy,strong
+Parallelism,"Using the same grammatical form for items in a series or comparison.","Keeping the structure of listed items consistent.",correct,good,lenient
+Parallelism,"Using the same grammatical form for items in a series or comparison.","Making a sentence balanced.",partial,hard,partial
+Parallelism,"Using the same grammatical form for items in a series or comparison.","Avoiding run-on sentences.",incorrect,again,wrong
+Parallelism,"Using the same grammatical form for items in a series or comparison.","",incorrect,again,blank
+Misplaced modifier,"A word or phrase positioned so that it appears to modify the wrong part of the sentence.","A modifier placed so that it seems to describe the wrong word.",correct,easy,strong
+Misplaced modifier,"A word or phrase positioned so that it appears to modify the wrong part of the sentence.","When a describing phrase sits next to the wrong thing.",correct,good,lenient
+Misplaced modifier,"A word or phrase positioned so that it appears to modify the wrong part of the sentence.","A grammar mistake involving descriptions.",partial,hard,partial
+Misplaced modifier,"A word or phrase positioned so that it appears to modify the wrong part of the sentence.","Using the wrong verb tense.",incorrect,again,wrong
+Assumption,"An unstated premise that an argument requires to be true for its conclusion to hold.","Something the argument takes for granted and needs to be true for its conclusion.",correct,easy,strong
+Assumption,"An unstated premise that an argument requires to be true for its conclusion to hold.","An unstated thing the argument depends on.",correct,good,lenient
+Assumption,"An unstated premise that an argument requires to be true for its conclusion to hold.","A gap in the argument.",partial,hard,partial
+Assumption,"An unstated premise that an argument requires to be true for its conclusion to hold.","The conclusion of the argument.",incorrect,again,wrong
+Assumption,"An unstated premise that an argument requires to be true for its conclusion to hold.","",incorrect,again,blank
+Strengthen,"To provide evidence or a premise that makes an argument's conclusion more likely to be true.","Adding information that makes the conclusion more likely.",correct,easy,strong
+Strengthen,"To provide evidence or a premise that makes an argument's conclusion more likely to be true.","To support the argument's conclusion.",correct,good,lenient
+Strengthen,"To provide evidence or a premise that makes an argument's conclusion more likely to be true.","To say something related to the argument.",partial,hard,partial
+Strengthen,"To provide evidence or a premise that makes an argument's conclusion more likely to be true.","To strengthen an argument is to expose the flaw that makes its conclusion unlikely.",incorrect,again,confidently_wrong
+Inference,"A conclusion that must be true based on the given information.","Something that must be true given the stated facts.",correct,easy,strong
+Inference,"A conclusion that must be true based on the given information.","A conclusion drawn from the information.",correct,good,lenient
+Inference,"A conclusion that must be true based on the given information.","A reasonable guess based on the passage.",partial,hard,partial
+Inference,"A conclusion that must be true based on the given information.","The author's personal opinion.",incorrect,again,wrong
+Subject-verb agreement,"The rule that a verb must match its subject in number (singular or plural).","A singular subject takes a singular verb and a plural subject takes a plural verb.",correct,easy,strong
+Subject-verb agreement,"The rule that a verb must match its subject in number (singular or plural).","The verb has to match the subject in number.",correct,good,lenient
+Subject-verb agreement,"The rule that a verb must match its subject in number (singular or plural).","Making a sentence grammatically correct.",partial,hard,partial
+Subject-verb agreement,"The rule that a verb must match its subject in number (singular or plural).","Matching a pronoun to the noun it refers to.",incorrect,again,wrong
+Data sufficiency,"A question type that asks whether the given statements provide enough information to answer, not what the answer is.","Deciding whether the statements give enough information to answer, not actually solving it.",correct,easy,strong
+Data sufficiency,"A question type that asks whether the given statements provide enough information to answer, not what the answer is.","Whether the information is enough to answer the question.",correct,good,lenient
+Data sufficiency,"A question type that asks whether the given statements provide enough information to answer, not what the answer is.","A type of GMAT question.",partial,hard,partial
+Data sufficiency,"A question type that asks whether the given statements provide enough information to answer, not what the answer is.","A question that asks you to compute the exact value.",incorrect,again,wrong
+Data sufficiency,"A question type that asks whether the given statements provide enough information to answer, not what the answer is.","",incorrect,again,blank
+Correlation,"A statistical measure of how two variables move together.","How strongly two variables move together.",correct,easy,strong
+Correlation,"A statistical measure of how two variables move together.","The relationship between two variables.",correct,good,lenient
+Correlation,"A statistical measure of how two variables move together.","A connection between two data sets.",partial,hard,partial
+Correlation,"A statistical measure of how two variables move together.","When one thing directly causes another.",incorrect,again,wrong

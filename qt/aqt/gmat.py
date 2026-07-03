@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import html
 import json
+import re
 import time
 
 import aqt
+from anki.cards import CardId
 from aqt import colors, gui_hooks, props
 from aqt.qt import *
 from aqt.theme import theme_manager
@@ -330,24 +332,38 @@ def _create_mcq_notetype(mw: aqt.AnkiQt) -> None:
 
 
 def setup_gmat_menu(mw: aqt.AnkiQt) -> None:
-    """Add the GMAT entries under the Tools menu."""
-    readiness = QAction("GMAT Readiness", mw)
-    qconnect(readiness.triggered, lambda: show_gmat_readiness(mw))
-    mw.form.menuTools.addAction(readiness)
-
+    """Add the GMAT setup entries under the Tools menu. The user-facing actions
+    (Readiness, Race/Correct the Peer) and the AI on/off switch live on the
+    deck-browser dashboard hero instead."""
     mcq = QAction("Create GMAT MCQ Note Type", mw)
     qconnect(mcq.triggered, lambda: _create_mcq_notetype(mw))
     mw.form.menuTools.addAction(mcq)
-
-    ai = QAction("Toggle AI Term Grading", mw)
-    qconnect(ai.triggered, lambda: toggle_ai_grading(mw))
-    mw.form.menuTools.addAction(ai)
 
     organize = QAction("Organize GMAT Decks by Section", mw)
     qconnect(organize.triggered, lambda: organize_gmat_decks_by_section(mw))
     mw.form.menuTools.addAction(organize)
 
     setup_ai_grading()
+    # On each profile load, keep the stored note types in sync with the code:
+    # refresh the MCQ template/CSS, and (when AI is on) ensure every GMAT::Terms
+    # note type has the typed-recall input — so template/styling changes and new
+    # sections pick up AI grading without manual steps.
+    gui_hooks.profile_did_open.append(_gmat_profile_refresh)
+    _gmat_profile_refresh()
+
+
+def _gmat_profile_refresh() -> None:
+    mw = aqt.mw
+    if not (mw and mw.col):
+        return
+    if mw.col.models.by_name(MCQ_NOTETYPE_NAME):
+        ensure_mcq_notetype(mw.col)  # refresh template/CSS (never creates it here)
+    # Keep the term note types in sync with the AI switch: text box present only
+    # when AI is on, removed when off.
+    if mw.col.get_config(AI_ENABLED_KEY, False):
+        ensure_terms_typed_recall(mw.col)
+    else:
+        remove_terms_typed_recall(mw.col)
 
 
 # --- MCQ practice mode (Deliverable 2b) --------------------------------------
@@ -373,6 +389,77 @@ TAG_PREFIX = "GMAT"
 _CYCLE_KEY = "gmat_practice_cycle"
 _CYCLE_DONE_KEY = "gmat_practice_cycle_done"
 
+# --- Daily practice quota (FSRS-independent) ---------------------------------
+# MCQ practice is a drill, not spaced repetition, so it is excluded from the
+# normal "due today" counts (see deckbrowser). Instead a fixed number of practice
+# questions are "due" each day, tracked here by day number (col.sched.today) so it
+# resets at the day rollover. Stored in the (synced) collection config so desktop
+# and AnkiDroid share one target + progress.
+PRACTICE_TARGET_KEY = "gmat_practice_daily_target"
+_PRACTICE_DAILY_KEY = "gmat_practice_daily"  # {"day": <today>, "done": <count>}
+_DEFAULT_PRACTICE_TARGET = 20
+
+
+def practice_daily_target(col) -> int:
+    """How many practice questions are due per day (configurable)."""
+    try:
+        return int(col.get_config(PRACTICE_TARGET_KEY, _DEFAULT_PRACTICE_TARGET))
+    except (TypeError, ValueError):
+        return _DEFAULT_PRACTICE_TARGET
+
+
+def _practice_done_today(col) -> int:
+    rec = col.get_config(_PRACTICE_DAILY_KEY, None)
+    if isinstance(rec, dict) and rec.get("day") == col.sched.today:
+        try:
+            return int(rec.get("done", 0))
+        except (TypeError, ValueError):
+            return 0
+    return 0
+
+
+def practice_due_today(col) -> int:
+    """Remaining practice questions in today's quota (never negative)."""
+    return max(0, practice_daily_target(col) - _practice_done_today(col))
+
+
+def record_practice_done(col) -> None:
+    """Count one answered practice question against today's quota (resets on a
+    new day)."""
+    done = _practice_done_today(col) + 1
+    col.set_config(_PRACTICE_DAILY_KEY, {"day": col.sched.today, "done": done})
+
+
+def _subtree_contains(node, did) -> bool:
+    if node.deck_id == did:
+        return True
+    return any(_subtree_contains(child, did) for child in node.children)
+
+
+def counts_excluding_practice(col, node) -> tuple[int, int, int]:
+    """(new, learn, review) for a deck-tree node with the GMAT::Practice subtree
+    removed. Sums non-practice subtrees rather than subtracting practice from the
+    aggregate, so daily-limit capping stays consistent (a parent never drops below
+    its FSRS children)."""
+    practice_did = col.decks.id_for_name(PRACTICE_DECK)
+    return _counts_excl(node, practice_did)
+
+
+def _counts_excl(node, practice_did) -> tuple[int, int, int]:
+    if practice_did is not None and node.deck_id == practice_did:
+        return (0, 0, 0)  # the practice subtree contributes nothing
+    if practice_did is not None and _subtree_contains(node, practice_did):
+        # An ancestor of practice: sum its children with practice excluded.
+        new = learn = review = 0
+        for child in node.children:
+            cn, cl, cr = _counts_excl(child, practice_did)
+            new += cn
+            learn += cl
+            review += cr
+        return (new, learn, review)
+    # No practice inside: the node's own (capped) aggregate is already correct.
+    return (node.new_count, node.learn_count, node.review_count)
+
 # --- AI term-card grading (Deliverable: Friday AI) ---------------------------
 # When enabled, GMAT::Terms cards get a typed-recall input and the student's
 # answer is graded for *meaning* by an LLM (qt/aqt/gmat_ai.py), grounded in the
@@ -391,6 +478,7 @@ _MCQ_FRONT = """\
   {{#E}}<button class="gmat-opt" data-letter="E" onclick="gmatChoose('E')"><b>E.</b> {{E}}</button>{{/E}}
 </div>
 <div id="gmat-status"></div>
+<div id="gmat-peer" style="display:none"></div>
 <button id="gmat-continue" style="display:none" onclick="gmatContinue()">Continue</button>
 <script>
 // AnkiDroid sets globalThis.ankiPlatform = "ankidroid" and neutralizes pycmd, so the
@@ -432,6 +520,11 @@ function gmatReveal(chosen, correct, correctLetter) {
   if (s) s.textContent = correct ? '✓ Correct' : '✗ Incorrect';
   var c = document.getElementById('gmat-continue');
   if (c) c.style.display = 'inline-block';
+}
+// Desktop-only: an AI "study peer" explains a wrong answer (injected async).
+function gmatPeerGuidance(html) {
+  var p = document.getElementById('gmat-peer');
+  if (p) { p.innerHTML = html; p.style.display = 'block'; }
 }
 </script>
 """
@@ -546,6 +639,70 @@ def _grade_and_reveal(reviewer, letter: str) -> None:
         f"gmatReveal({json.dumps(letter)}, {json.dumps(res.correct)}, "
         f"{json.dumps(res.correct_answer)});"
     )
+    # On a wrong answer, an AI "study peer" explains the mistake (desktop-only,
+    # async so the reveal isn't blocked; nothing shown when AI is off).
+    if not res.correct and ai_grading_enabled(reviewer.mw.col):
+        _maybe_peer_guidance(reviewer, letter)
+
+
+def _mcq_field_map(note) -> dict:
+    """Map GMAT MCQ field names -> values for a note."""
+    names = [f["name"] for f in note.note_type()["flds"]]
+    return {name: note.fields[i] for i, name in enumerate(names)}
+
+
+def _render_peer_panel(reply) -> str:
+    # reply.svg is already sanitized in gmat_ai; insert it raw so it renders.
+    svg_html = ""
+    if getattr(reply, "svg", ""):
+        svg_html = (
+            '<div style="margin-top:10px;max-width:100%;overflow:auto;">'
+            f"{reply.svg}</div>"
+        )
+    return (
+        '<div style="margin-top:14px;text-align:left;max-width:40em;'
+        "margin-left:auto;margin-right:auto;padding:12px 14px;border-radius:12px;"
+        'background:rgba(249,135,111,0.12);">'
+        '<div style="font-weight:700;margin-bottom:4px;">🐱 Study peer</div>'
+        f"<div>{html.escape(reply.text)}</div>{svg_html}</div>"
+    )
+
+
+def _maybe_peer_guidance(reviewer, chosen_letter: str) -> None:
+    """Fetch an AI peer explanation off-thread and inject it into the card."""
+    from aqt import gmat_ai
+
+    card = reviewer.card
+    if card is None:
+        return
+    fields = _mcq_field_map(card.note())
+    question = fields.get("Question", "")
+    options = [
+        (x, fields[x]) for x in ("A", "B", "C", "D", "E") if fields.get(x, "").strip()
+    ]
+    correct = fields.get("Answer", "").strip()
+    explanation = fields.get("Explanation", "").strip()
+    card_id = card.id
+    mw = reviewer.mw
+
+    def op(_col=None):
+        return gmat_ai.peer_explain(
+            question, options, correct, chosen_letter, explanation
+        )
+
+    def on_done(fut) -> None:
+        try:
+            reply = fut.result()
+        except Exception:
+            reply = None
+        if not reply:
+            return
+        # Only inject if we're still on the same card.
+        if reviewer.card is None or reviewer.card.id != card_id:
+            return
+        reviewer.web.eval(f"gmatPeerGuidance({json.dumps(_render_peer_panel(reply))});")
+
+    mw.taskman.run_in_background(op, on_done)
 
 
 def _advance(reviewer) -> None:
@@ -558,6 +715,7 @@ def _advance(reviewer) -> None:
         # Pool mode: no FSRS. Mark the card done for this cycle and draw the next.
         if card is not None:
             pool_mark_done(reviewer.mw.col, card.id)
+            record_practice_done(reviewer.mw.col)
         reviewer.nextCard()
         return
     # An MCQ card reached via the normal scheduler (e.g. studying a parent deck):
@@ -682,11 +840,11 @@ def organize_gmat_decks_by_section(mw: aqt.AnkiQt) -> None:
             "where c.nid = n.id and c.did = ?",
             parent_did,
         )
-        buckets: dict[str, list[int]] = {}
+        buckets: dict[str, list[CardId]] = {}
         for cid, tags in rows:
             leaf = _section_leaf_from_tags(tags or "")
             if leaf:
-                buckets.setdefault(leaf, []).append(cid)
+                buckets.setdefault(leaf, []).append(CardId(cid))
         for leaf, cids in buckets.items():
             target_did = col.decks.id(f"{parent}::{leaf}")
             col.set_deck(cids, target_did)
@@ -863,23 +1021,59 @@ def _highlight_choice(ease: int) -> None:
         pass
 
 
-def ensure_terms_typed_recall(col) -> bool:
-    """Add a `{{type:<answer-field>}}` input to the note type used by GMAT::Terms
-    cards, so the built-in type-answer flow (and our AI grader) engages. Returns
-    True if a card/note type was found."""
+def _terms_notetype_ids(col) -> list[int]:
+    """Distinct note-type ids used by GMAT::Terms cards (all sections)."""
     ids = col.find_cards(f'deck:"{TERMS_DECK}"')
     if not ids:
+        return []
+    id_list = ",".join(str(int(c)) for c in ids)  # ids are ints -> safe to inline
+    return col.db.list(
+        f"select distinct mid from notes where id in "
+        f"(select nid from cards where id in ({id_list}))"
+    )
+
+
+def ensure_terms_typed_recall(col) -> bool:
+    """Add a `{{type:<answer-field>}}` recall input to EVERY note type used by
+    GMAT::Terms cards, so the typed-answer flow + AI grader engage for all
+    sections. Idempotent. Returns True if any term cards were found."""
+    from anki.models import NotetypeId
+
+    mids = _terms_notetype_ids(col)
+    if not mids:
         return False
-    card = col.get_card(ids[0])
-    nt = card.note_type()
-    tmpl = nt["tmpls"][0]
-    if "{{type:" in tmpl["qfmt"]:
-        return True
-    fields = [f["name"] for f in nt["flds"]]
-    back = fields[1] if len(fields) > 1 else fields[0]
-    tmpl["qfmt"] = tmpl["qfmt"] + f"\n\n{{{{type:{back}}}}}"
-    col.models.update_dict(nt)
+    for mid in mids:
+        nt = col.models.get(NotetypeId(mid))
+        if not nt:
+            continue
+        tmpl = nt["tmpls"][0]
+        if "{{type:" in tmpl["qfmt"]:
+            continue
+        fields = [f["name"] for f in nt["flds"]]
+        back = fields[1] if len(fields) > 1 else fields[0]
+        tmpl["qfmt"] = tmpl["qfmt"] + f"\n\n{{{{type:{back}}}}}"
+        col.models.update_dict(nt)
     return True
+
+
+def remove_terms_typed_recall(col) -> None:
+    """Strip the `{{type:...}}` recall input from GMAT::Terms note types, so with
+    AI off the term cards revert to plain front/back self-rating (no text box,
+    no AI response). Idempotent."""
+    from anki.models import NotetypeId
+
+    for mid in _terms_notetype_ids(col):
+        nt = col.models.get(NotetypeId(mid))
+        if not nt:
+            continue
+        tmpl = nt["tmpls"][0]
+        if "{{type:" not in tmpl["qfmt"]:
+            continue
+        # Remove the injected type field (and the whitespace before it).
+        new_qfmt = re.sub(r"\s*\{\{type:[^}]*\}\}", "", tmpl["qfmt"]).rstrip()
+        if new_qfmt != tmpl["qfmt"]:
+            tmpl["qfmt"] = new_qfmt
+            col.models.update_dict(nt)
 
 
 def toggle_ai_grading(mw: aqt.AnkiQt) -> None:
@@ -889,7 +1083,8 @@ def toggle_ai_grading(mw: aqt.AnkiQt) -> None:
     new = not bool(col.get_config(AI_ENABLED_KEY, False))
     col.set_config(AI_ENABLED_KEY, new)
     if not new:
-        tooltip("AI term grading disabled (cards self-rate).", parent=mw)
+        remove_terms_typed_recall(col)  # drop the text box; back to self-rating
+        tooltip("AI features off — term cards use normal self-rating.", parent=mw)
         return
     found = ensure_terms_typed_recall(col)
     from aqt import gmat_ai

@@ -236,6 +236,98 @@ tr:hover:not(.top-level-drag-row) {
     }
 }
 
+/* Row of dashboard action buttons (Upload + Readiness / Race / Correct). */
+.hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6em;
+    margin-top: 1em;
+}
+
+/* Secondary action button (matches the upload button but subtler). */
+.hero-btn {
+    display: inline-block;
+    background: color(canvas-inset);
+    color: color(fg);
+    text-decoration: none;
+    font-weight: 600;
+    padding: 0.55em 1em;
+    border: 1px solid color(border-subtle);
+    border-radius: prop(border-radius-large);
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+        border-color var(--transition) ease,
+        background var(--transition) ease;
+
+    &:hover {
+        border-color: color(accent-card);
+        background: rgba(249, 135, 111, 0.1);
+    }
+}
+
+/* AI-features master switch (top-right of the hero). */
+.hero-ai {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+}
+
+.ai-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
+    cursor: pointer;
+    user-select: none;
+
+    input {
+        display: none;
+    }
+
+    .ai-slider {
+        position: relative;
+        flex: 0 0 auto;
+        width: 3em;
+        height: 1.5em;
+        background: color(border);
+        border-radius: 999px;
+        transition: background var(--transition) ease;
+    }
+
+    .ai-slider::before {
+        content: "";
+        position: absolute;
+        top: 0.15em;
+        left: 0.15em;
+        width: 1.2em;
+        height: 1.2em;
+        background: #fff;
+        border-radius: 50%;
+        transition: transform var(--transition) ease;
+    }
+
+    input:checked + .ai-slider {
+        background: color(button-primary-bg);
+    }
+
+    input:checked + .ai-slider::before {
+        transform: translateX(1.5em);
+    }
+
+    .ai-switch-label {
+        font-weight: 600;
+        font-size: 0.9em;
+    }
+}
+
+.ai-hint {
+    font-size: 0.7em;
+    color: color(fg-subtle);
+}
+
 /* GMAT per-section mastery / readiness strip */
 .gmat-strip {
     display: flex;
@@ -280,6 +372,18 @@ tr:hover:not(.top-level-drag-row) {
     font-size: 0.72em;
     color: color(fg-subtle);
     gap: 0.5em;
+}
+
+.gmat-caption {
+    margin-top: 0.6em;
+    font-size: 0.72em;
+    line-height: 1.4;
+    color: color(fg-subtle);
+
+    b {
+        color: color(fg);
+        font-weight: 600;
+    }
 }
 
 /* ---------------- Per-deck progress bar ---------------- */

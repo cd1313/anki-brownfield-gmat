@@ -23,6 +23,11 @@ run-optimized *args:
 sync-server user="demo" pass="demo":
     {{ if os() == "windows" { "$env:SYNC_USER1='" + user + ":" + pass + "'; .\\run.bat --syncserver" } else { "SYNC_USER1='" + user + ":" + pass + "' ./run --syncserver" } }}
 
+# Evaluate the GMAT AI features (term grader + peer) against labelled gold sets.
+# Reproduces from a committed response cache; pass --refresh (with OPENAI_API_KEY) to re-call.
+eval-ai *args:
+    PYTHONPATH=out/pylib out/pyenv/bin/python tools/gmat_eval/run_ai_eval.py {{args}}
+
 # Watch web sources and rebuild/reload Anki's web stack on change (macOS/Linux)
 web-watch:
     ./tools/web-watch

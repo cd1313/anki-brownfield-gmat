@@ -52,7 +52,10 @@ class RenderData:
     studied_today: str
     sched_upgrade_required: bool
     total_due: int = 0
+    practice_due: int = 0  # today's GMAT MCQ practice quota (FSRS-independent)
     gmat: list[GmatSectionStat] = field(default_factory=list)
+    ai_enabled: bool = False  # the "AI features" master switch (col.conf)
+    ai_has_key: bool = False  # whether an OPENAI_API_KEY is present
 
 
 @dataclass
@@ -192,6 +195,19 @@ class DeckBrowser:
             set_current_deck(
                 parent=self.mw, deck_id=DeckId(int(arg))
             ).run_in_background()
+        elif cmd == "gmat_ai_toggle":
+            from aqt import gmat
+
+            gmat.toggle_ai_grading(self.mw)
+            self._renderPage()  # re-render the hero with the new switch state
+        elif cmd == "gmat_readiness":
+            from aqt import gmat
+
+            gmat.show_gmat_readiness(self.mw)
+        elif cmd == "gmat_correct":
+            from aqt import gmat_peer
+
+            gmat_peer.show_correct_peer(self.mw)
         return False
 
     def set_current_deck(self, deck_id: DeckId) -> None:
@@ -239,9 +255,14 @@ class DeckBrowser:
         if not reuse:
 
             def get_data(col: Collection) -> RenderData:
+                from aqt import gmat, gmat_ai
+
                 tree = col.sched.deck_due_tree()
+                # MCQ practice is a drill, not spaced repetition — keep it out of the
+                # FSRS "due today" total (it gets its own daily quota below). Sum the
+                # non-practice subtrees so daily-limit capping stays consistent.
                 total_due = sum(
-                    child.new_count + child.learn_count + child.review_count
+                    sum(gmat.counts_excluding_practice(col, child))
                     for child in tree.children
                 )
                 return RenderData(
@@ -250,7 +271,10 @@ class DeckBrowser:
                     studied_today=col.studied_today(),
                     sched_upgrade_required=not col.v3_scheduler(),
                     total_due=total_due,
+                    practice_due=gmat.practice_due_today(col),
                     gmat=_collect_gmat_stats(col),
+                    ai_enabled=bool(col.get_config(gmat.AI_ENABLED_KEY, False)),
+                    ai_has_key=gmat_ai.ai_available(),
                 )
 
             def success(output: RenderData) -> None:
@@ -304,6 +328,8 @@ class DeckBrowser:
         chips = (
             f'<div class="chip"><div class="chip-num">{data.total_due}</div>'
             f'<div class="chip-label">due today</div></div>'
+            f'<div class="chip"><div class="chip-num">{data.practice_due}</div>'
+            f'<div class="chip-label">practice today</div></div>'
             f'<div class="chip"><div class="chip-num">{deck_count}</div>'
             f'<div class="chip-label">{"deck" if deck_count == 1 else "decks"}</div></div>'
         )
@@ -322,15 +348,42 @@ class DeckBrowser:
                     f'<div class="gmat-sec">{html.escape(s.label)}</div>'
                     f'<div class="gmat-bar"><div class="gmat-bar-fill" '
                     f'style="width:{fill}%"></div></div>'
-                    f'<div class="gmat-nums"><span>Mastery {mastery_pct}</span>'
+                    f'<div class="gmat-nums"><span>Memory {mastery_pct}</span>'
                     f"<span>Readiness {score}</span></div>"
                     f"</div>"
                 )
-            gmat_html = f'<div class="gmat-strip">{cards}</div>'
+            caption = (
+                '<div class="gmat-caption">'
+                "Percentages show your <b>memory score</b> "
+                "(how well you recall this section&rsquo;s terms) &mdash; "
+                "not test performance. Readiness is your projected section score."
+                "</div>"
+            )
+            gmat_html = f'<div class="gmat-strip">{cards}</div>{caption}'
 
         upload = (
             '<a class="upload-btn" href=# onclick="return pycmd(\'import\')">'
             "&#x2191; Upload deck</a>"
+        )
+        actions = (
+            '<a class="hero-btn" href=# onclick="return pycmd(\'gmat_readiness\')">'
+            "Readiness</a>"
+            '<a class="hero-btn" href=# onclick="return pycmd(\'gmat_correct\')">'
+            "Correct the Peer</a>"
+        )
+        # AI-features master switch (reflects col.conf; hint when no key present).
+        checked = "checked" if data.ai_enabled else ""
+        hint = (
+            ""
+            if data.ai_has_key
+            else '<span class="ai-hint">add OPENAI_API_KEY to .env</span>'
+        )
+        ai_switch = (
+            '<label class="ai-switch" title="Toggle all AI features">'
+            f'<input type="checkbox" {checked} onchange="pycmd(\'gmat_ai_toggle\')">'
+            '<span class="ai-slider"></span>'
+            '<span class="ai-switch-label">AI features</span></label>'
+            f"{hint}"
         )
         return f"""
 <div class="hero">
@@ -340,8 +393,9 @@ class DeckBrowser:
       <div class="hero-title">Welcome back</div>
       <div class="hero-chips">{chips}</div>
     </div>
-    <div class="hero-actions">{upload}</div>
+    <div class="hero-ai">{ai_switch}</div>
   </div>
+  <div class="hero-actions">{upload}{actions}</div>
   {gmat_html}
 </div>
 """
@@ -419,14 +473,24 @@ class DeckBrowser:
                 klass = "zero-count"
             return f'<span class="{klass}">{cnt}</span>'
 
-        review = nonzeroColour(node.review_count, "review-count")
-        learn = nonzeroColour(node.learn_count, "learn-count")
+        # GMAT MCQ practice is a drill, not FSRS — its new/learn/review counts are
+        # meaningless, so blank them out on the practice rows; ancestor rows (e.g.
+        # "GMAT") show their FSRS children only. The daily practice quota lives on the
+        # hero instead.
+        from aqt import gmat
 
-        buf += ("<td align=end>%s</td>" * 3) % (
-            nonzeroColour(node.new_count, "new-count"),
-            learn,
-            review,
-        )
+        deck_name = self.mw.col.decks.name(node.deck_id)
+        practice = gmat.PRACTICE_DECK
+        if deck_name == practice or deck_name.startswith(practice + "::"):
+            dash = '<span class="zero-count">–</span>'
+            buf += ("<td align=end>%s</td>" * 3) % (dash, dash, dash)
+        else:
+            new_c, learn_c, review_c = gmat.counts_excluding_practice(self.mw.col, node)
+            buf += ("<td align=end>%s</td>" * 3) % (
+                nonzeroColour(new_c, "new-count"),
+                nonzeroColour(learn_c, "learn-count"),
+                nonzeroColour(review_c, "review-count"),
+            )
         # options
         buf += (
             "<td align=center class=opts><a onclick='return pycmd(\"opts:%d\");'>"

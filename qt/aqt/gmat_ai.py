@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -194,4 +195,206 @@ def grade(
         verdict=verdict,
         rationale=rationale,
         rating=rating,
+    )
+
+
+# --- Peer studier (MCQ questions) --------------------------------------------
+#
+# A "study peer" for practice questions. All calls are grounded in the card's
+# own Answer/Explanation (the named source) and fail safe (return None with no
+# key / on any error) so the caller degrades gracefully.
+
+
+def _chat_json(
+    system_prompt: str, user_prompt: str, timeout: float = 12.0
+) -> dict | None:
+    """Shared JSON-mode chat call. Returns the parsed object, or None on any
+    failure (no key, network error, bad JSON)."""
+    key = api_key()
+    if not key:
+        return None
+    body = json.dumps(
+        {
+            "model": model(),
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+        }
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        _OPENAI_URL,
+        data=body,
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        content = payload["choices"][0]["message"]["content"]
+        parsed = json.loads(content)
+        return parsed if isinstance(parsed, dict) else None
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError):
+        return None
+
+
+def _format_options(options: list[tuple[str, str]]) -> str:
+    return "\n".join(f"{letter}. {text}" for letter, text in options)
+
+
+@dataclass
+class PeerReply:
+    text: str  # the peer's first-person feedback
+    svg: str = ""  # optional sanitized inline SVG diagram ("" when none)
+
+
+@dataclass
+class PeerFlaw:
+    choice: str  # the wrong option letter the peer "picked"
+    reasoning: str  # the plausible-but-flawed solution
+
+
+@dataclass
+class Critique:
+    found_flaw: bool
+    feedback: str
+
+
+_PEER_EXPLAIN_PROMPT = (
+    "You are a friendly fellow GMAT student — a study buddy, NOT a teacher — "
+    "reacting to a question your friend just got wrong. Speak in the FIRST PERSON "
+    "with a warm, casual, encouraging voice, like texting a classmate. Start by "
+    "relating to how tricky it was, then walk through how YOU approached it — "
+    '("that one was rough! here\'s how I tried it: …") — and gently point out '
+    "where their choice slips up. Share it as a peer thinking out loud, not a "
+    "lecture. Base your walkthrough ONLY on the reference explanation/answer; do "
+    "not invent facts. Keep it to 2-4 sentences.\n"
+    "IF (and only if) a simple picture would genuinely help — a geometry figure, "
+    "a number line, a small bar chart, or a tiny table — include a minimal, "
+    "self-contained inline SVG in `svg` (a single <svg …>…</svg>, roughly "
+    "360x260 max, readable in both light and dark themes, NO <script>, no "
+    "external images or links). For questions where a diagram adds nothing (most "
+    'verbal / plain-text ones), set "svg" to an empty string.\n'
+    "Respond with ONLY compact JSON: "
+    '{"guidance":"<your peer message>","svg":"<inline SVG or empty string>"}.'
+)
+
+
+def _sanitize_svg(svg: str) -> str:
+    """Keep a single inline <svg> only, stripping scripts, event handlers, and
+    external references. Returns "" if it doesn't look like a safe SVG."""
+    s = (svg or "").strip()
+    low = s.lower()
+    if not low.startswith("<svg") or "</svg>" not in low or len(s) > 20000:
+        return ""
+    s = re.sub(r"<script.*?</script>", "", s, flags=re.IGNORECASE | re.DOTALL)
+    s = re.sub(
+        r"<foreignobject.*?</foreignobject>", "", s, flags=re.IGNORECASE | re.DOTALL
+    )
+    s = re.sub(r"""\son\w+\s*=\s*("[^"]*"|'[^']*')""", "", s, flags=re.IGNORECASE)
+    # drop external hrefs/urls (keep only inline drawing)
+    s = re.sub(
+        r"""\s(?:xlink:href|href)\s*=\s*("[^"]*"|'[^']*')""", "", s, flags=re.IGNORECASE
+    )
+    return s
+
+
+_PEER_FLAW_PROMPT = (
+    "Role-play a fellow GMAT student who solves a multiple-choice question but "
+    "makes ONE realistic, plausible mistake and arrives at a WRONG answer. Pick a "
+    "wrong option (never the correct one) and write a short first-person solution "
+    "(2-4 sentences) that sounds confident but contains the flaw — do not reveal "
+    "that it is wrong. Base it on the real question; the correct answer is given "
+    "so you can avoid it. Respond with ONLY compact JSON: "
+    '{"choice":"<wrong option letter>","reasoning":"<2-4 sentence flawed solution>"}.'
+)
+
+_CRITIQUE_PROMPT = (
+    "A student is playing 'correct the peer': a peer gave a flawed solution to a "
+    "GMAT question and the student critiques it. To succeed the student must do "
+    "BOTH: (1) give the correct answer or approach, AND (2) actually EXPLAIN it — "
+    "why the peer's reasoning is wrong and/or why the correct approach works.\n"
+    "Set found_flaw=true ONLY when both are present. If the student merely states "
+    'an answer with no real reasoning (e.g. "the answer is A", "it\'s B", just a '
+    "letter, or a vague restatement with no justification), set found_flaw=false "
+    "and, in the feedback, tell them they need to explain WHY — not just name the "
+    "answer. Be encouraging but honest, and ground your judgement in the reference "
+    "explanation. Respond with ONLY compact JSON: "
+    '{"found_flaw":true|false,"feedback":"<2-3 sentences>"}.'
+)
+
+
+def peer_explain(
+    question: str,
+    options: list[tuple[str, str]],
+    correct_letter: str,
+    chosen_letter: str,
+    explanation: str,
+) -> PeerReply | None:
+    """A peer's first-person take on why the student's MCQ answer was wrong,
+    grounded in the card's explanation, with an optional inline SVG diagram when
+    a visual would help. None when unavailable."""
+    user = (
+        f"Question:\n{question}\n\nOptions:\n{_format_options(options)}\n\n"
+        f"Correct answer: {correct_letter}\nStudent chose: {chosen_letter}\n\n"
+        f"Reference explanation:\n{explanation or '(none provided)'}\n\n"
+        "Explain the student's mistake, with a diagram only if it truly helps."
+    )
+    data = _chat_json(_PEER_EXPLAIN_PROMPT, user)
+    if not data:
+        return None
+    text = str(data.get("guidance", "")).strip()
+    if not text:
+        return None
+    return PeerReply(text=text, svg=_sanitize_svg(str(data.get("svg", ""))))
+
+
+def peer_flawed_solution(
+    question: str,
+    options: list[tuple[str, str]],
+    correct_letter: str,
+    explanation: str,
+) -> PeerFlaw | None:
+    """A plausible-but-wrong peer solution for the 'correct the peer' mode.
+    Guaranteed to pick a wrong option (or None). None when unavailable."""
+    user = (
+        f"Question:\n{question}\n\nOptions:\n{_format_options(options)}\n\n"
+        f"Correct answer (avoid this one): {correct_letter}\n\n"
+        f"Reference explanation:\n{explanation or '(none provided)'}\n\n"
+        "Give a confident but flawed solution ending on a wrong option."
+    )
+    data = _chat_json(_PEER_FLAW_PROMPT, user)
+    if not data:
+        return None
+    choice = str(data.get("choice", "")).strip().upper()[:1]
+    reasoning = str(data.get("reasoning", "")).strip()
+    # Safety: must be a real, wrong choice with reasoning.
+    if not choice or not reasoning or choice == (correct_letter or "").strip().upper():
+        return None
+    return PeerFlaw(choice=choice, reasoning=reasoning)
+
+
+def critique_check(
+    question: str,
+    correct_letter: str,
+    explanation: str,
+    flawed_reasoning: str,
+    student_critique: str,
+) -> Critique | None:
+    """Judge the student's critique of the peer's flawed solution. None when
+    unavailable."""
+    user = (
+        f"Question:\n{question}\n\nCorrect answer: {correct_letter}\n\n"
+        f"Reference explanation:\n{explanation or '(none provided)'}\n\n"
+        f"Peer's flawed solution:\n{flawed_reasoning}\n\n"
+        f"Student's critique:\n{student_critique}\n\n"
+        "Did the student correctly identify the flaw or the right approach?"
+    )
+    data = _chat_json(_CRITIQUE_PROMPT, user)
+    if data is None:
+        return None
+    return Critique(
+        found_flaw=bool(data.get("found_flaw")),
+        feedback=str(data.get("feedback", "")).strip(),
     )
