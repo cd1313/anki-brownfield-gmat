@@ -220,7 +220,7 @@ impl Collection {
         let correct =
             !correct_answer.is_empty() && correct_answer.eq_ignore_ascii_case(input.chosen.trim());
         if input.took_millis > 0 {
-            self.record_mcq_attempt(cid, correct, input.took_millis)?;
+            let _ = self.record_mcq_attempt(cid, correct, input.took_millis)?;
         }
         Ok(anki_proto::gmat::GradeMcqResponse {
             correct,
@@ -238,7 +238,12 @@ impl Collection {
     /// also live in `GMAT::Practice`, outside the `GMAT::Terms` memory query.)
     /// These entries are the input to the IRT performance model; the reader
     /// identifies them via [`RevlogEntry::is_cramming`].
-    fn record_mcq_attempt(&mut self, cid: CardId, correct: bool, took_millis: u32) -> Result<()> {
+    fn record_mcq_attempt(
+        &mut self,
+        cid: CardId,
+        correct: bool,
+        took_millis: u32,
+    ) -> Result<anki_proto::collection::OpChanges> {
         let button_chosen = if correct {
             MCQ_CORRECT_BUTTON
         } else {
@@ -259,7 +264,20 @@ impl Collection {
             col.add_revlog_entry_undoable(entry)?;
             Ok(())
         })
-        .map(|_| ())
+        .map(Into::into)
+    }
+
+    /// Record one graded attempt (from any grader, e.g. AI semantic grading of a
+    /// typed `GMAT::Terms` answer) as a non-scheduling revlog entry, so the IRT
+    /// performance model has response data. Undo-aware. Generalises the MCQ-only
+    /// [`Collection::record_mcq_attempt`]; correctness/latency are encoded the
+    /// same way (see its docs), so these entries flow into the same IRT reader
+    /// via [`RevlogEntry::is_cramming`] and sync as ordinary revlog rows.
+    pub(crate) fn record_graded_attempt_impl(
+        &mut self,
+        input: anki_proto::gmat::RecordGradedAttemptRequest,
+    ) -> Result<anki_proto::collection::OpChanges> {
+        self.record_mcq_attempt(CardId(input.card_id), input.correct, input.took_millis)
     }
 
     /// Practice pool ("custom review order"): recommend the next card matching
@@ -1153,6 +1171,74 @@ mod tests {
             col.storage.get_revlog_entries_for_card(cid).unwrap().len(),
             2,
             "took_millis=0 does not log"
+        );
+    }
+
+    fn add_basic_card(col: &mut Collection) -> CardId {
+        let nt = col.basic_notetype();
+        let mut note = nt.new_note();
+        col.add_note(&mut note, DeckId(1)).unwrap();
+        col.storage.card_ids_of_notes(&[note.id]).unwrap()[0]
+    }
+
+    fn record_graded(col: &mut Collection, cid: CardId, correct: bool, took_millis: u32) {
+        let _ = col
+            .record_graded_attempt_impl(anki_proto::gmat::RecordGradedAttemptRequest {
+                card_id: cid.0,
+                correct,
+                took_millis,
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn graded_attempt_correct_logs_cramming_revlog() {
+        // A generic graded attempt (e.g. an AI-graded typed term answer) records
+        // a non-scheduling revlog entry the IRT reader can consume.
+        let mut col = Collection::new();
+        let cid = add_basic_card(&mut col);
+        record_graded(&mut col, cid, true, 3_000);
+
+        let revlog = col.storage.get_revlog_entries_for_card(cid).unwrap();
+        assert_eq!(revlog.len(), 1);
+        let e = &revlog[0];
+        assert_eq!(e.button_chosen, MCQ_CORRECT_BUTTON);
+        assert_eq!(e.taken_millis, 3_000);
+        // Non-scheduling ("cramming") so FSRS/memory are untouched, yet it still
+        // carries a rating the IRT performance reader picks up.
+        assert!(e.is_cramming());
+        assert!(e.has_rating());
+        assert!(!e.has_rating_and_affects_scheduling());
+    }
+
+    #[test]
+    fn graded_attempt_incorrect_uses_incorrect_button() {
+        let mut col = Collection::new();
+        let cid = add_basic_card(&mut col);
+        record_graded(&mut col, cid, false, 5_000);
+
+        let revlog = col.storage.get_revlog_entries_for_card(cid).unwrap();
+        assert_eq!(revlog.len(), 1);
+        assert_eq!(revlog[0].button_chosen, MCQ_INCORRECT_BUTTON);
+        assert_eq!(revlog[0].taken_millis, 5_000);
+        assert!(revlog[0].is_cramming());
+    }
+
+    #[test]
+    fn graded_attempt_is_undoable() {
+        let mut col = Collection::new();
+        let cid = add_basic_card(&mut col);
+        record_graded(&mut col, cid, true, 3_000);
+        assert_eq!(
+            col.storage.get_revlog_entries_for_card(cid).unwrap().len(),
+            1
+        );
+
+        col.undo().unwrap();
+        assert_eq!(
+            col.storage.get_revlog_entries_for_card(cid).unwrap().len(),
+            0,
+            "undo removes the graded attempt"
         );
     }
 

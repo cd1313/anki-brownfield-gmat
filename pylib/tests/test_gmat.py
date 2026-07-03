@@ -201,3 +201,41 @@ def test_gmat_estimate_readiness():
     # took_millis == 0 must NOT log another response.
     col._backend.grade_mcq(card_id=cids[0], chosen="C", took_millis=0)
     assert readiness()["GMAT::Quant"].responses == 12
+
+
+def test_gmat_record_graded_attempt():
+    # The generalised recorder (used by AI grading of typed answers) feeds the
+    # same IRT performance model as MCQ grading, via the backend RPC.
+    col = getEmptyCol()
+    nt = _add_mcq_notetype(col)
+    cids = []
+    for _ in range(12):
+        note = col.new_note(nt)
+        note["Question"] = "Q"
+        note["Answer"] = "C"
+        note.tags = ["GMAT::Quant::Algebra"]
+        col.add_note(note, deck_id=1)
+        cids.append(note.cards()[0].id)
+
+    # Record attempts via the NEW RPC (not grade_mcq): all correct, within budget.
+    for cid in cids:
+        col._backend.record_graded_attempt(card_id=cid, correct=True, took_millis=3000)
+
+    by = {
+        s.section: s
+        for s in col._backend.estimate_readiness(
+            search='note:"GMAT MCQ"',
+            tag_prefix="GMAT",
+            time_budget_secs=120,
+            section_minutes=45,
+            min_responses=10,
+            min_coverage=0.5,
+            max_se=1.0,
+        )
+    }
+    assert "GMAT::Quant" in by
+    q = by["GMAT::Quant"]
+    assert q.responses == 12  # the recorded attempts became IRT responses
+    assert q.pct_correct == 1.0
+    assert q.theta > 0.0
+    assert q.has_score

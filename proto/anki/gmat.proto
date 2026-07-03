@@ -14,6 +14,11 @@ import "anki/collection.proto";
 service GmatService {
   rpc GetTopicMastery(TopicMasteryRequest) returns (TopicMasteryResponse);
   rpc GradeMcq(GradeMcqRequest) returns (GradeMcqResponse);
+  // Record one graded attempt (from any grader, e.g. AI semantic grading of a
+  // typed term answer) as a non-scheduling revlog entry feeding the IRT
+  // performance model. Generalises the MCQ-only recorder.
+  rpc RecordGradedAttempt(RecordGradedAttemptRequest)
+      returns (collection.OpChanges);
   // Practice pool: pick a random practice card not yet completed this cycle.
   rpc NextPracticeCard(PracticePoolRequest) returns (NextPracticeCardResponse);
   // Mark a practice card completed for the given cycle (no FSRS / no revlog).
@@ -85,6 +90,16 @@ message GradeMcqResponse {
   bool correct = 1;
   // The correct option letter, from the note's "Answer" field.
   string correct_answer = 2;
+}
+
+message RecordGradedAttemptRequest {
+  // The card that was answered (e.g. a GMAT::Terms card graded by AI).
+  int64 card_id = 1;
+  // Whether the grader judged the answer correct.
+  bool correct = 2;
+  // Milliseconds taken to answer (card shown -> answer submitted), for the IRT
+  // pacing input.
+  uint32 took_millis = 3;
 }
 
 message PracticePoolRequest {

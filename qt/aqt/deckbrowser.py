@@ -440,8 +440,11 @@ class DeckBrowser:
 
     def _progress_bar(self, node: DeckTreeNode) -> str:
         """A thin bar under the deck name showing the new/learn/review mix of
-        what's due. Universal (uses counts already on the node); hidden when the
-        deck has nothing due."""
+        what's due. Shown only on top-level decks (whose counts aggregate their
+        subdecks) to avoid a clunky stack of near-identical bars under every
+        subdeck; hidden when the deck has nothing due."""
+        if node.level != 1:  # top-level decks only (indent uses level - 1)
+            return ""
         n, lrn, rev = node.new_count, node.learn_count, node.review_count
         total = n + lrn + rev
         if total <= 0:

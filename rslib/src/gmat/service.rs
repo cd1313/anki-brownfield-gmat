@@ -19,6 +19,13 @@ impl crate::services::GmatService for Collection {
         self.grade_mcq_answer(input)
     }
 
+    fn record_graded_attempt(
+        &mut self,
+        input: anki_proto::gmat::RecordGradedAttemptRequest,
+    ) -> error::Result<anki_proto::collection::OpChanges> {
+        self.record_graded_attempt_impl(input)
+    }
+
     fn next_practice_card(
         &mut self,
         input: anki_proto::gmat::PracticePoolRequest,

@@ -15,11 +15,12 @@ MCQ" note type + the no-FSRS practice pool.
 
 from __future__ import annotations
 
+import html
 import json
 import time
 
 import aqt
-from aqt import colors, props
+from aqt import colors, gui_hooks, props
 from aqt.qt import *
 from aqt.theme import theme_manager
 from aqt.utils import disable_help_button, restoreGeom, saveGeom, tooltip
@@ -338,6 +339,16 @@ def setup_gmat_menu(mw: aqt.AnkiQt) -> None:
     qconnect(mcq.triggered, lambda: _create_mcq_notetype(mw))
     mw.form.menuTools.addAction(mcq)
 
+    ai = QAction("Toggle AI Term Grading", mw)
+    qconnect(ai.triggered, lambda: toggle_ai_grading(mw))
+    mw.form.menuTools.addAction(ai)
+
+    organize = QAction("Organize GMAT Decks by Section", mw)
+    qconnect(organize.triggered, lambda: organize_gmat_decks_by_section(mw))
+    mw.form.menuTools.addAction(organize)
+
+    setup_ai_grading()
+
 
 # --- MCQ practice mode (Deliverable 2b) --------------------------------------
 #
@@ -361,6 +372,14 @@ PRACTICE_SEARCH = f'deck:"{PRACTICE_DECK}" note:"{MCQ_NOTETYPE_NAME}"'
 TAG_PREFIX = "GMAT"
 _CYCLE_KEY = "gmat_practice_cycle"
 _CYCLE_DONE_KEY = "gmat_practice_cycle_done"
+
+# --- AI term-card grading (Deliverable: Friday AI) ---------------------------
+# When enabled, GMAT::Terms cards get a typed-recall input and the student's
+# answer is graded for *meaning* by an LLM (qt/aqt/gmat_ai.py), grounded in the
+# card's own answer field (the named source). With AI off / no key, term cards
+# fall back to normal self-rating.
+TERMS_DECK = "GMAT::Terms"
+AI_ENABLED_KEY = "gmat_ai_enabled"
 
 _MCQ_FRONT = """\
 <div class="gmat-q">{{Question}}</div>
@@ -559,12 +578,12 @@ def _advance(reviewer) -> None:
 
 
 def practice_pool_active(reviewer) -> bool:
-    """True when the deck being studied is GMAT::Practice (pool mode)."""
+    """True when studying GMAT::Practice or any of its per-section subdecks."""
     col = reviewer.mw.col
     if not col:
         return False
-    did = col.decks.get_current_id()
-    return col.decks.name(did) == PRACTICE_DECK
+    name = col.decks.name(col.decks.get_current_id())
+    return name == PRACTICE_DECK or name.startswith(PRACTICE_DECK + "::")
 
 
 def suppress_default_answer(reviewer) -> bool:
@@ -597,8 +616,13 @@ def pool_serve(reviewer) -> bool:
     if col.get_config(_CYCLE_DONE_KEY, False):
         pool_reset(col)
         col.set_config(_CYCLE_DONE_KEY, False)
+    # Scope the pool to the deck being studied: the parent GMAT::Practice serves
+    # every section (deck: includes subdecks), while a section subdeck (e.g.
+    # GMAT::Practice::Quant) serves only that section.
+    deck_name = col.decks.name(col.decks.get_current_id())
+    search = f'deck:"{deck_name}" note:"{MCQ_NOTETYPE_NAME}"'
     res = col._backend.next_practice_card(
-        search=PRACTICE_SEARCH, cycle=_cycle(col), tag_prefix=TAG_PREFIX
+        search=search, cycle=_cycle(col), tag_prefix=TAG_PREFIX
     )
     if res.exhausted:
         col.set_config(_CYCLE_DONE_KEY, True)
@@ -618,3 +642,274 @@ def _show_cycle_complete(reviewer) -> None:
         "You've completed all practice questions — the pool resets next time.",
         parent=reviewer.mw,
     )
+
+
+# --- Organize decks by GMAT section (Quant / Verbal / Data Insights) ---------
+
+# Subdeck leaf name per section, derived from SECTIONS (e.g. "Quant").
+_SECTION_LEAVES = [topic.split("::")[1] for topic, _ in SECTIONS]
+
+
+def _section_leaf_from_tags(tagstr: str) -> str | None:
+    """Return the section subdeck leaf (Quant/Verbal/DataInsights) for a card
+    from its space-separated tag string, or None if it has no section tag."""
+    valid = set(_SECTION_LEAVES)
+    for tag in tagstr.split():
+        if tag.startswith(TAG_PREFIX + "::"):
+            parts = tag.split("::")
+            if len(parts) >= 2 and parts[1] in valid:
+                return parts[1]
+    return None
+
+
+def organize_gmat_decks_by_section(mw: aqt.AnkiQt) -> None:
+    """Move GMAT::Terms and GMAT::Practice cards into per-section subdecks
+    (…::Quant / ::Verbal / ::DataInsights) based on each card's section tag.
+    One-time and undo-safe; cards without a section tag stay in the parent."""
+    col = mw.col
+    if not col:
+        return
+    moved = 0
+    made: set[str] = set()
+    for parent in (TERMS_DECK, PRACTICE_DECK):
+        pd = col.decks.by_name(parent)
+        if not pd:
+            continue
+        parent_did = pd["id"]
+        # Cards directly in the parent (subdeck cards already have a different did).
+        rows = col.db.all(
+            "select c.id, n.tags from cards c, notes n "
+            "where c.nid = n.id and c.did = ?",
+            parent_did,
+        )
+        buckets: dict[str, list[int]] = {}
+        for cid, tags in rows:
+            leaf = _section_leaf_from_tags(tags or "")
+            if leaf:
+                buckets.setdefault(leaf, []).append(cid)
+        for leaf, cids in buckets.items():
+            target_did = col.decks.id(f"{parent}::{leaf}")
+            col.set_deck(cids, target_did)
+            moved += len(cids)
+            made.add(f"{parent}::{leaf}")
+    if moved:
+        tooltip(
+            f"Organized {moved} cards into {len(made)} section subdecks.", parent=mw
+        )
+    else:
+        tooltip(
+            "Nothing to organize — cards are already sorted or have no "
+            f'"{TAG_PREFIX}::<section>" tags.',
+            parent=mw,
+        )
+    mw.reset()
+
+
+# --- AI term-card grading ----------------------------------------------------
+#
+# Term cards use Anki's built-in type-answer machinery (a {{type:Field}} input
+# we add to the note type when AI grading is enabled). On answer, the
+# `reviewer_will_render_compared_answer` hook replaces the exact-match diff with
+# an LLM semantic verdict AND recommends the Anki/FSRS rating (Again/Hard/Good/
+# Easy). The recommended answer button is highlighted + focused, but the student
+# clicks to advance (so they can review first). Any failure (no key, network
+# error, non-term card) falls back to normal self-rating; the app works with AI off.
+
+# Small delay so the answer buttons are on screen before we highlight the pick.
+_HIGHLIGHT_DELAY_MS = 60
+
+# Guard so we grade + highlight only once per answer render.
+_last_ai_graded_card: int | None = None
+
+
+def ai_grading_enabled(col) -> bool:
+    """True when the per-collection toggle is on AND a key is available."""
+    if not col or not col.get_config(AI_ENABLED_KEY, False):
+        return False
+    try:
+        from aqt import gmat_ai
+
+        return gmat_ai.ai_available()
+    except Exception:
+        return False
+
+
+def _is_terms_card(card) -> bool:
+    if card is None or aqt.mw is None or aqt.mw.col is None:
+        return False
+    try:
+        name = aqt.mw.col.decks.name(card.current_deck_id())
+    except Exception:
+        return False
+    return name == TERMS_DECK or name.startswith(TERMS_DECK + "::")
+
+
+def _render_ai_verdict(result) -> str:
+    color = {"correct": "#2e7d32", "partial": "#b8860b", "incorrect": "#c62828"}.get(
+        result.verdict, "#555"
+    )
+    label = {
+        "correct": "✓ Correct",
+        "partial": "≈ Partially correct",
+        "incorrect": "✗ Incorrect",
+    }.get(result.verdict, result.verdict)
+    rationale = html.escape(result.rationale) if result.rationale else ""
+    rating_color = {
+        "again": "#c62828",
+        "hard": "#b8860b",
+        "good": "#2e7d32",
+        "easy": "#1565c0",
+    }.get(result.rating, "#555")
+    rating = {
+        "again": "Again",
+        "hard": "Hard",
+        "good": "Good",
+        "easy": "Easy",
+    }.get(result.rating, result.rating)
+    return (
+        '<div class="gmat-ai-verdict" style="margin-top:14px;text-align:left;'
+        'max-width:40em;margin-left:auto;margin-right:auto;">'
+        f'<div style="font-weight:700;color:{color};font-size:1.1em;">{label}</div>'
+        '<div style="margin-top:12px;display:flex;align-items:center;gap:8px;'
+        'flex-wrap:wrap;">'
+        '<span style="opacity:.7;">AI recommends:</span>'
+        f'<span style="display:inline-block;background:{rating_color};color:#fff;'
+        "font-weight:700;font-size:1.05em;padding:4px 16px;border-radius:999px;"
+        f'letter-spacing:.02em;">{rating}</span>'
+        '<span style="opacity:.6;">— press it (highlighted below) when ready</span>'
+        "</div>"
+        # Why this rating (1–2 sentences), not a repeat of the definition.
+        f'<div style="margin:10px 0 0;">{rationale}</div>'
+        '<div style="opacity:.6;font-size:.8em;margin-top:8px;">'
+        "Graded by AI against this card's definition.</div>"
+        "</div>"
+    )
+
+
+def maybe_ai_grade_render(
+    output: str, expected: str, provided: str, type_pattern: str
+) -> str:
+    """`reviewer_will_render_compared_answer` hook. Returns AI verdict HTML for
+    GMAT::Terms cards when AI grading is on; otherwise the unchanged output."""
+    global _last_ai_graded_card
+    mw = aqt.mw
+    reviewer = getattr(mw, "reviewer", None)
+    if reviewer is None or not ai_grading_enabled(mw.col):
+        return output
+    card = reviewer.card
+    if not _is_terms_card(card):
+        return output
+    try:
+        from aqt import gmat_ai
+
+        question = card.note().fields[0] if card.note().fields else ""
+        result = gmat_ai.grade(question, expected or "", provided or "")
+    except Exception:
+        return output
+    if result is None:
+        return output  # fall back to the exact-match diff (manual self-rating)
+    # Recommend a rating once per answer: highlight + focus the matching answer
+    # button so it's obvious, but let the student click it to advance (time to
+    # review). A small delay ensures the buttons have rendered first.
+    if _last_ai_graded_card != card.id:
+        _last_ai_graded_card = card.id
+        try:
+            count = mw.col.sched.answerButtons(card)
+        except Exception:
+            count = 4
+        ease = _ease_for_rating(result.rating, count)
+        QTimer.singleShot(_HIGHLIGHT_DELAY_MS, lambda e=ease: _highlight_choice(e))
+    return _render_ai_verdict(result)
+
+
+def _ease_for_rating(rating: str, button_count: int) -> int:
+    """Map a rating name to the correct ease for the card's button layout. Anki
+    shifts ease values by count: 4 buttons = Again/Hard/Good/Easy (1-4), 3 =
+    Again/Good/Easy (1-3), 2 = Again/Good (1-2). Ratings without a matching
+    button fall back to the nearest available (hard->Good, easy->Good/top)."""
+    if button_count >= 4:
+        return {"again": 1, "hard": 2, "good": 3, "easy": 4}.get(rating, 3)
+    if button_count == 3:  # Again, Good, Easy
+        return {"again": 1, "hard": 2, "good": 2, "easy": 3}.get(rating, 2)
+    return {"again": 1, "hard": 2, "good": 2, "easy": 2}.get(rating, 2)  # Again, Good
+
+
+def _highlight_choice(ease: int) -> None:
+    """Ring + focus the AI-recommended answer button in the bottom bar so the
+    student can see (and one-tap / press Enter) the pick. Never answers for them."""
+    rev = getattr(aqt.mw, "reviewer", None)
+    if rev is None or getattr(rev, "bottom", None) is None:
+        return
+    js = (
+        """
+(function() {
+  document.querySelectorAll('button[data-ease]').forEach(function(b) {
+    b.style.outline = ''; b.style.outlineOffset = ''; b.style.boxShadow = '';
+  });
+  var el = document.querySelector('button[data-ease="%d"]');
+  if (el) {
+    el.style.outline = '3px solid #f9876f';
+    el.style.outlineOffset = '2px';
+    el.style.boxShadow = '0 0 0 5px rgba(249,135,111,0.35)';
+    try { el.focus(); } catch (e) {}
+  }
+})();
+"""
+        % ease
+    )
+    try:
+        rev.bottom.web.eval(js)
+    except Exception:
+        pass
+
+
+def ensure_terms_typed_recall(col) -> bool:
+    """Add a `{{type:<answer-field>}}` input to the note type used by GMAT::Terms
+    cards, so the built-in type-answer flow (and our AI grader) engages. Returns
+    True if a card/note type was found."""
+    ids = col.find_cards(f'deck:"{TERMS_DECK}"')
+    if not ids:
+        return False
+    card = col.get_card(ids[0])
+    nt = card.note_type()
+    tmpl = nt["tmpls"][0]
+    if "{{type:" in tmpl["qfmt"]:
+        return True
+    fields = [f["name"] for f in nt["flds"]]
+    back = fields[1] if len(fields) > 1 else fields[0]
+    tmpl["qfmt"] = tmpl["qfmt"] + f"\n\n{{{{type:{back}}}}}"
+    col.models.update_dict(nt)
+    return True
+
+
+def toggle_ai_grading(mw: aqt.AnkiQt) -> None:
+    col = mw.col
+    if not col:
+        return
+    new = not bool(col.get_config(AI_ENABLED_KEY, False))
+    col.set_config(AI_ENABLED_KEY, new)
+    if not new:
+        tooltip("AI term grading disabled (cards self-rate).", parent=mw)
+        return
+    found = ensure_terms_typed_recall(col)
+    from aqt import gmat_ai
+
+    if not found:
+        tooltip(f'No cards found in "{TERMS_DECK}".', parent=mw)
+    elif not gmat_ai.ai_available():
+        tooltip(
+            "AI grading on, but no OPENAI_API_KEY found — set it in .env. "
+            "Term cards fall back to self-rating until then.",
+            parent=mw,
+        )
+    else:
+        tooltip("AI term grading enabled.", parent=mw)
+
+
+def setup_ai_grading() -> None:
+    """Register the AI grading render hook (idempotent)."""
+    if (
+        maybe_ai_grade_render
+        not in gui_hooks.reviewer_will_render_compared_answer._hooks
+    ):
+        gui_hooks.reviewer_will_render_compared_answer.append(maybe_ai_grade_render)

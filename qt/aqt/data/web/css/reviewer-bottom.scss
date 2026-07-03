@@ -42,14 +42,6 @@ button {
     }
 }
 
-/* the default answer (Good) gets a subtle coral outline instead of a filled
- * pill, so it's gently emphasized without looking stuck/pressed */
-#defease {
-    border-color: color(accent-card);
-    color: color(accent-card);
-    font-weight: 600;
-}
-
 .hitem {
     margin-top: 2px;
 }

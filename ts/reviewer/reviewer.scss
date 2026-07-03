@@ -165,6 +165,19 @@ pre {
     // https://anki.tenderapp.com/discussions/beta-testing/1854-using-margin-auto-causes-horizontal-scrollbar-on-typesomething
     box-sizing: border-box;
     line-height: 1.75;
+    // The card is a light "paper" surface in both themes, so keep the answer box
+    // white with dark text even in dark mode (instead of the dark night-mode input).
+    background: #fff;
+    color: #241f1c;
+    border: 1px solid rgba(0, 0, 0, 0.3);
+    caret-color: #241f1c;
+}
+
+// beat night-mode input styling with matching specificity
+body.nightMode #typeans {
+    background: #fff;
+    color: #241f1c;
+    border-color: rgba(0, 0, 0, 0.3);
 }
 
 code#typeans {
