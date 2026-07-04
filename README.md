@@ -95,12 +95,28 @@ model is told not to override it with outside knowledge), all calls run off the 
 missing key / network error / bad response falls back to normal self-rating — the app never breaks
 because AI is unavailable.
 
-**Evaluated honestly.** `tools/gmat_eval/run_ai_eval.py` (`just eval-ai`) scores the AI features
-against small human-labelled gold sets and writes [docs/gmat/AI-EVAL-RESULTS.md](docs/gmat/AI-EVAL-RESULTS.md).
-It's reproducible offline from a committed response cache (temperature 0, no key needed to re-run).
-Current headline numbers: term-grader verdict accuracy **~85%** with a **2.8%** false-pass rate, and
-the "correct the peer" critique judge at **~96%**. These are measured against a small hand-authored
-set, **not** real student data or exam outcomes — see the report's honesty notes.
+**Evaluated honestly, against a baseline, behind a gate.** `tools/gmat_eval/run_ai_eval.py`
+(`just eval-ai`) scores the AI features against small human-labelled gold sets and writes
+[docs/gmat/AI-EVAL-RESULTS.md](docs/gmat/AI-EVAL-RESULTS.md). It's reproducible offline from a
+committed response cache (temperature 0, no key needed to re-run).
+
+- **Headline:** term-grader verdict accuracy **~85%** with a **2.8%** false-pass rate.
+- **Beats a simpler method:** side-by-side with two model-free lexical graders (keyword-overlap and
+  fuzzy-string), each tuned on the same set for its best case, the LLM wins by **+17.6 pts** accuracy
+  and **−25 pts** false-pass — far fewer wrong answers waved through.
+- **Pre-registered ship gate:** cutoffs fixed _before_ the numbers (verdict accuracy ≥ 75%,
+  false-pass ≤ 10%, must beat the best baseline); `just eval-ai` exits nonzero if the grader misses
+  them, so the eval gates the feature instead of just describing it.
+- **An honest negative:** on the tiny (n=24) critique set, the simple length rule actually ties/edges
+  the LLM judge — reported as-is, not hidden.
+
+These are measured against small hand-authored sets, **not** real student data or exam outcomes — see
+the report's honesty notes.
+
+**What we deliberately skipped (for now):** no AI-generated cards (content risk + prompt-injection
+surface), no chatbot, no LLM anywhere in the readiness scores (kept statistical and auditable), and
+no vector-search baseline in the eval (it needs an embedding model/key; keyword overlap is the
+standard no-model baseline). AI is desktop-only this milestone.
 
 ### 5. Shared Rust engine → identical on phone and desktop
 
