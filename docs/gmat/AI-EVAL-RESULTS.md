@@ -16,32 +16,32 @@ Graded 68 human-labelled typed-recall answers (0 skipped: no cached/available re
 
 Confusion matrix (rows = gold, cols = AI):
 
-| gold ＼ AI | correct | partial | incorrect |
-|---|---|---|---|
-| **correct** | 29 | 3 | 0 |
-| **partial** | 1 | 12 | 3 |
-| **incorrect** | 0 | 3 | 17 |
+| gold ＼ AI    | correct | partial | incorrect |
+| ------------- | ------- | ------- | --------- |
+| **correct**   | 29      | 3       | 0         |
+| **partial**   | 1       | 12      | 3         |
+| **incorrect** | 0       | 3       | 17        |
 
 Accuracy by answer band:
 
-| band | verdict accuracy | n |
-|---|---|---|
-| blank | 100.0% | 4 |
-| confidently_wrong | 33.3% | 3 |
-| lenient | 81.2% | 16 |
-| partial | 75.0% | 16 |
-| strong | 100.0% | 16 |
-| wrong | 92.3% | 13 |
+| band              | verdict accuracy | n  |
+| ----------------- | ---------------- | -- |
+| blank             | 100.0%           | 4  |
+| confidently_wrong | 33.3%            | 3  |
+| lenient           | 81.2%            | 16 |
+| partial           | 75.0%            | 16 |
+| strong            | 100.0%           | 16 |
+| wrong             | 92.3%            | 13 |
 
 ### Baseline comparison — does the LLM beat a simpler method?
 
-Model-free lexical graders over the **same** answers, mapping a text-similarity score to correct/partial/incorrect. Their thresholds are tuned on this very set to maximise the baseline's *own* accuracy (its best case), so the AI is held to a deliberately hard bar. Lower false-pass is better.
+Model-free lexical graders over the **same** answers, mapping a text-similarity score to correct/partial/incorrect. Their thresholds are tuned on this very set to maximise the baseline's _own_ accuracy (its best case), so the AI is held to a deliberately hard bar. Lower false-pass is better.
 
-| grader | verdict accuracy | false-pass | false-fail |
-|---|---|---|---|
-| **AI (`gpt-4o-mini`)** | 85.3% | 2.8% (1/36) | 9.4% (3/32) |
-| Keyword overlap (F1) (t≥0.25/0.05) | 67.6% | 27.8% (10/36) | 15.6% (5/32) |
-| Fuzzy string ratio (t≥0.40/0.05) | 67.6% | 27.8% (10/36) | 3.1% (1/32) |
+| grader                             | verdict accuracy | false-pass    | false-fail   |
+| ---------------------------------- | ---------------- | ------------- | ------------ |
+| **AI (`gpt-4o-mini`)**             | 85.3%            | 2.8% (1/36)   | 9.4% (3/32)  |
+| Keyword overlap (F1) (t≥0.25/0.05) | 67.6%            | 27.8% (10/36) | 15.6% (5/32) |
+| Fuzzy string ratio (t≥0.40/0.05)   | 67.6%            | 27.8% (10/36) | 3.1% (1/32)  |
 
 Against the strongest baseline, the AI grader is **+17.6 pts** on verdict accuracy and **-25.0 pts** on false-pass (negative false-pass delta = fewer wrong answers waved through).
 
@@ -63,10 +63,10 @@ Against the strongest baseline, the AI grader is **+17.6 pts** on verdict accura
 
 Baseline comparison (does the LLM judge beat a simpler rule?):
 
-| judge | accuracy |
-|---|---|
-| **AI (`gpt-4o-mini`)** | 95.8% |
-| Names answer + ≥9 words (tuned) | 100.0% |
+| judge                           | accuracy |
+| ------------------------------- | -------- |
+| **AI (`gpt-4o-mini`)**          | 95.8%    |
+| Names answer + ≥9 words (tuned) | 100.0%   |
 
 **Honest negative:** on this small set (n=24) the length rule ties or beats the LLM (**-4.2 pts**). The hand-authored bare critiques are all short, so length alone happens to separate them; the rule is brittle (a padded-but-wrong critique would slip past it) but this set has no such case. The critique judge is a practice-game feature, not safety-critical, so it is **not** in the ship gate — that rides on the term grader, where the AI's margin is large and the cost of a false-pass is real.
 
@@ -80,11 +80,11 @@ Baseline comparison (does the LLM judge beat a simpler rule?):
 
 These thresholds were fixed **before** the numbers above; `just eval-ai` exits nonzero if any fails, so the eval gates the feature rather than just describing it. The gate is on the term grader — the safety-critical judge that can advance a card.
 
-| criterion | required | measured | result |
-|---|---|---|---|
-| Verdict accuracy ≥ 75% | 75% | 85.3% | ✅ pass |
-| False-pass ≤ 10% | 10% | 2.8% | ✅ pass |
-| Beats best simple baseline (accuracy & false-pass) | — | acc 85.3% vs 67.6%; false-pass 2.8% vs 27.8% | ✅ pass |
+| criterion                                          | required | measured                                     | result  |
+| -------------------------------------------------- | -------- | -------------------------------------------- | ------- |
+| Verdict accuracy ≥ 75%                             | 75%      | 85.3%                                        | ✅ pass |
+| False-pass ≤ 10%                                   | 10%      | 2.8%                                         | ✅ pass |
+| Beats best simple baseline (accuracy & false-pass) | —        | acc 85.3% vs 67.6%; false-pass 2.8% vs 27.8% | ✅ pass |
 
 **Overall: ✅ PASS — cleared to ship**
 
@@ -95,4 +95,3 @@ These thresholds were fixed **before** the numbers above; `just eval-ai` exits n
 - Peer MCQs are real GMAT-prep items; `peer_explain` groundedness is only sanity-checked (availability), not verified against the reference rationale.
 - `gpt-4o-mini` at temperature 0; responses are cached so the numbers are pinned. Nothing here is validated against real GMAT exam outcomes.
 - Baseline thresholds are tuned on this same set to maximise the baseline's own accuracy — a best case for the baseline, so the AI's margin is conservative. A vector-search baseline is **skipped**: it needs an embedding model/key, and keyword overlap is the standard no-model baseline for this task.
-
