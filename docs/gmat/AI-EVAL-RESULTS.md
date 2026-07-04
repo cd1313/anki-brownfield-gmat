@@ -16,22 +16,22 @@ Graded 68 human-labelled typed-recall answers (0 skipped: no cached/available re
 
 Confusion matrix (rows = gold, cols = AI):
 
-| gold ＼ AI | correct | partial | incorrect |
-|---|---|---|---|
-| **correct** | 29 | 3 | 0 |
-| **partial** | 1 | 12 | 3 |
-| **incorrect** | 0 | 3 | 17 |
+| gold ＼ AI    | correct | partial | incorrect |
+| ------------- | ------- | ------- | --------- |
+| **correct**   | 29      | 3       | 0         |
+| **partial**   | 1       | 12      | 3         |
+| **incorrect** | 0       | 3       | 17        |
 
 Accuracy by answer band:
 
-| band | verdict accuracy | n |
-|---|---|---|
-| blank | 100.0% | 4 |
-| confidently_wrong | 33.3% | 3 |
-| lenient | 81.2% | 16 |
-| partial | 75.0% | 16 |
-| strong | 100.0% | 16 |
-| wrong | 92.3% | 13 |
+| band              | verdict accuracy | n  |
+| ----------------- | ---------------- | -- |
+| blank             | 100.0%           | 4  |
+| confidently_wrong | 33.3%            | 3  |
+| lenient           | 81.2%            | 16 |
+| partial           | 75.0%            | 16 |
+| strong            | 100.0%           | 16 |
+| wrong             | 92.3%            | 13 |
 
 ## Part B — AI peer features
 
@@ -61,4 +61,3 @@ Accuracy by answer band:
 - Grader inputs are representative GMAT terms with authored student answers, **not** a real distribution of student responses.
 - Peer MCQs are real GMAT-prep items; `peer_explain` groundedness is only sanity-checked (availability), not verified against the reference rationale.
 - `gpt-4o-mini` at temperature 0; responses are cached so the numbers are pinned. Nothing here is validated against real GMAT exam outcomes.
-

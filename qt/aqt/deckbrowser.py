@@ -479,7 +479,7 @@ class DeckBrowser:
         # hero instead.
         from aqt import gmat
 
-        deck_name = self.mw.col.decks.name(node.deck_id)
+        deck_name = self.mw.col.decks.name(DeckId(node.deck_id))
         practice = gmat.PRACTICE_DECK
         if deck_name == practice or deck_name.startswith(practice + "::"):
             dash = '<span class="zero-count">–</span>'

@@ -22,10 +22,10 @@ import time
 
 import aqt
 from anki.cards import CardId
-from aqt import colors, gui_hooks, props
+from aqt import gui_hooks
 from aqt.qt import *
-from aqt.theme import theme_manager
 from aqt.utils import disable_help_button, restoreGeom, saveGeom, tooltip
+from aqt.webview import AnkiWebView
 
 # Give-up rule + mastery thresholds (see PRD "Thresholds" open task; tweak freely).
 R_THRESHOLD = 0.8  # retrievability >= this counts toward "mastered"
@@ -57,6 +57,72 @@ SECTIONS = [
 ]
 
 
+# Card-based readiness view rendered in an AnkiWebView (inherits the coral theme
+# + dark mode automatically via stdHtml). `render(data)` is driven from Python.
+_READINESS_HTML = """
+<div id="wrap">
+  <h1>GMAT readiness</h1>
+  <p class="muted">Three separate scores per section &mdash; never blended.</p>
+  <div id="cards"></div>
+  <details class="about">
+    <summary>How these scores work</summary>
+    <div id="caption" class="muted"></div>
+  </details>
+</div>
+<style>
+  #wrap { max-width: 62em; margin: 0 auto; padding: 24px 28px; }
+  h1 { font-size: 1.5em; font-weight: 700; margin: 0 0 2px; }
+  .muted { color: var(--fg-subtle); font-size: 0.82em; line-height: 1.55; }
+  .sec-card { background: var(--canvas-elevated); border: 1px solid var(--border-subtle);
+              border-radius: var(--border-radius-medium); padding: 20px 24px; margin: 18px 0; }
+  .sec-title { font-weight: 700; font-size: 1.05em; margin-bottom: 18px; }
+  .metrics { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .metric { min-width: 0; padding: 2px 22px; }
+  .metric:first-child { padding-left: 0; }
+  .metric + .metric { border-left: 1px solid var(--border-subtle); }
+  .metric-label { color: var(--accent-card); font-weight: 700; font-size: 0.68em;
+                  text-transform: uppercase; letter-spacing: .06em; }
+  .metric-big { font-size: 2.3em; font-weight: 700; line-height: 1.1; margin: 6px 0 2px; }
+  .metric-big.dim { color: var(--fg-subtle); font-weight: 600; font-size: 1.15em; margin-top: 12px; }
+  .metric-sub { font-size: 0.8em; color: var(--fg); margin-top: 2px; }
+  .metric-sub2 { font-size: 0.75em; color: var(--fg-subtle); margin-top: 3px; }
+  .bar { height: 6px; border-radius: 3px; background: var(--border-subtle);
+         overflow: hidden; margin: 8px 0; max-width: 12em; }
+  .bar-fill { height: 100%; background: var(--accent-card); border-radius: 3px; }
+  .about { margin-top: 22px; }
+  .about > summary { color: var(--fg-link); cursor: pointer; font-size: 0.82em;
+                     list-style: none; width: fit-content; }
+  .about > summary::-webkit-details-marker { display: none; }
+  .about > summary::before { content: "\\25B8  "; }
+  .about[open] > summary::before { content: "\\25BE  "; }
+  .about > #caption { margin-top: 8px; }
+  @media (max-width: 640px) {
+    .metrics { grid-template-columns: 1fr; }
+    .metric { padding: 10px 0; }
+    .metric + .metric { border-left: none; border-top: 1px solid var(--border-subtle); }
+  }
+</style>
+<script>
+function esc(s){ var d=document.createElement('div'); d.textContent=(s==null?'':s); return d.innerHTML; }
+function metric(label, m){
+  var big = '<div class="metric-big'+(m.dim?' dim':'')+'">'+esc(m.big)+'</div>';
+  var bar = (m.barPct!=null) ? '<div class="bar"><div class="bar-fill" style="width:'+m.barPct+'%"></div></div>' : '';
+  var sub = m.sub ? '<div class="metric-sub">'+esc(m.sub)+'</div>' : '';
+  var sub2 = m.sub2 ? '<div class="metric-sub2">'+esc(m.sub2)+'</div>' : '';
+  return '<div class="metric"><div class="metric-label">'+esc(label)+'</div>'+big+bar+sub+sub2+'</div>';
+}
+function render(data){
+  document.getElementById('cards').innerHTML = data.sections.map(function(s){
+    return '<div class="sec-card"><div class="sec-title">'+esc(s.label)+'</div><div class="metrics">'+
+      metric('Memory', s.memory)+metric('Performance', s.performance)+metric('Readiness', s.readiness)+
+      '</div></div>';
+  }).join('');
+  document.getElementById('caption').innerHTML = esc(data.caption);
+}
+</script>
+"""
+
+
 class GmatReadinessDialog(QDialog):
     """Shows the three GMAT scores per section, each separately (never blended):
     Memory (term recall, FSRS), Performance (new-question ability, IRT), and
@@ -68,45 +134,10 @@ class GmatReadinessDialog(QDialog):
         self.setWindowTitle("GMAT Readiness")
         disable_help_button(self)
 
+        self.web = AnkiWebView(self, title="GMAT Readiness")
         layout = QVBoxLayout(self)
-
-        intro = QLabel(
-            "Three separate scores per GMAT section. <b>Memory</b> = recall of term "
-            "flashcards (FSRS), shown two ways: <i>Practiced</i> = recall over the cards "
-            "you've studied (shown with a 10th–90th percentile range); <i>Category</i> "
-            "= coverage-aware over the whole section as a single number (unreviewed "
-            "cards count as 0). <b>Performance</b> = ability on new MCQs (IRT). "
-            "<b>Readiness</b> = projected section score (60–90) with a pacing check. "
-            "No score is shown until a section has enough data."
-        )
-        intro.setWordWrap(True)
-        layout.addWidget(intro)
-
-        self.memory_table = self._add_table(
-            layout,
-            "Memory — term recall (MCQ excluded)",
-            [
-                "Section",
-                "Practiced (studied cards)",
-                "Category (whole section)",
-                "Reviewed / Total",
-                "Status",
-            ],
-        )
-        self.performance_table = self._add_table(
-            layout,
-            "Performance — new MCQs (IRT ability)",
-            ["Section", "Accuracy", "Ability θ", "Responses", "Status"],
-        )
-        self.readiness_table = self._add_table(
-            layout,
-            "Readiness — projected section score",
-            ["Section", "Projected score", "Likely range", "Confidence", "Pacing"],
-        )
-
-        self.status_label = QLabel("")
-        self.status_label.setWordWrap(True)
-        layout.addWidget(self.status_label)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.web)
 
         buttons = QDialogButtonBox()
         refresh = buttons.addButton("Refresh", QDialogButtonBox.ButtonRole.ActionRole)
@@ -114,62 +145,64 @@ class GmatReadinessDialog(QDialog):
         qconnect(refresh.clicked, self.refresh)
         qconnect(close.clicked, self.close)
         layout.addWidget(buttons)
+        layout.setContentsMargins(0, 0, 8, 8)
 
-        self._apply_style()
-        restoreGeom(self, "GmatReadinessDialog", default_size=(760, 640))
+        self.web.stdHtml(_READINESS_HTML, context=self)
+        restoreGeom(self, "GmatReadinessDialog", default_size=(900, 680))
         self.refresh()
 
-    def _apply_style(self) -> None:
-        """Warm pastel skin for the dashboard's raw Qt widgets (they don't pick
-        up the web CSS tokens, so resolve the shared theme tokens here)."""
-        v = theme_manager.var
-        surface = v(colors.CANVAS_ELEVATED)
-        border = v(colors.BORDER_SUBTLE)
-        fg = v(colors.FG)
-        subtle = v(colors.FG_SUBTLE)
-        accent = v(colors.ACCENT_CARD)
-        radius = v(props.BORDER_RADIUS_MEDIUM)
-        self.status_label.setObjectName("gmatStatus")
-        self.setStyleSheet(
-            f"""
-            QLabel {{ color: {fg}; }}
-            QTableWidget {{
-                background: {surface};
-                border: 1px solid {border};
-                border-radius: {radius};
-                gridline-color: {border};
-                color: {fg};
-            }}
-            QTableWidget::item {{ padding: 4px 8px; }}
-            QHeaderView::section {{
-                background: {accent};
-                color: #ffffff;
-                padding: 6px 10px;
-                border: none;
-                font-weight: 600;
-            }}
-            #gmatStatus {{ color: {subtle}; }}
-            """
-        )
-
-    def _add_table(
-        self, layout: QVBoxLayout, title: str, headers: list[str]
-    ) -> QTableWidget:
-        layout.addWidget(QLabel(f"<b>{title}</b>"))
-        table = QTableWidget(len(SECTIONS), len(headers), self)
-        table.setHorizontalHeaderLabels(headers)
-        table.verticalHeader().setVisible(False)
-        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        table.setFixedHeight(28 * (len(SECTIONS) + 1) + 8)
-        layout.addWidget(table)
-        return table
+    @staticmethod
+    def _memory_metric(t) -> dict:
+        if t is None:
+            return {"big": "—", "dim": True, "sub": "No term cards yet"}
+        if not t.has_score:
+            return {
+                "big": "—",
+                "dim": True,
+                "sub": f"{t.reviewed_cards}/{t.total_cards} reviewed",
+                "sub2": f"needs ≥{MIN_REVIEWS} reviews & ≥{MIN_CARDS} cards",
+            }
+        return {
+            "big": f"{t.category_score * 100:.0f}%",
+            "barPct": round(t.category_score * 100),
+            "sub": f"{t.reviewed_cards}/{t.total_cards} reviewed · {t.mastered_cards} mastered",
+            "sub2": (
+                f"studied recall {t.practiced_score * 100:.0f}% "
+                f"({t.practiced_low * 100:.0f}–{t.practiced_high * 100:.0f}%)"
+            ),
+        }
 
     @staticmethod
-    def _set_row(table: QTableWidget, row: int, cells: list[str]) -> None:
-        for col_idx, text in enumerate(cells):
-            table.setItem(row, col_idx, QTableWidgetItem(text))
+    def _performance_metric(s) -> dict:
+        if s is None:
+            return {"big": "—", "dim": True, "sub": "No practice attempts yet"}
+        if not s.has_score:
+            return {
+                "big": "—",
+                "dim": True,
+                "sub": f"{s.responses}/{PERF_MIN_RESPONSES} MCQs answered",
+                "sub2": f"needs ≥{PERF_MIN_RESPONSES} to score",
+            }
+        return {
+            "big": f"{s.pct_correct * 100:.0f}%",
+            "sub": f"θ {s.theta:+.2f} · {s.responses} MCQs",
+        }
+
+    @staticmethod
+    def _readiness_metric(s) -> dict:
+        if s is None or not s.has_score:
+            return {"big": "—", "dim": True, "sub": "Not enough data yet"}
+        # Project the 60–90 section score onto a 0–100 bar.
+        bar = max(0, min(100, round((s.score - 60.0) / 30.0 * 100)))
+        return {
+            "big": f"{s.score:.0f}",
+            "barPct": bar,
+            "sub": f"range {s.score_low:.0f}–{s.score_high:.0f} · {s.confidence} confidence",
+            "sub2": (
+                f"pacing {s.within_budget_rate * 100:.0f}% in budget · "
+                f"~{s.projected_section_minutes:.0f}/{SECTION_MINUTES} min"
+            ),
+        }
 
     def refresh(self) -> None:
         col = self.mw.col
@@ -199,115 +232,29 @@ class GmatReadinessDialog(QDialog):
             )
         }
 
-        for row, (topic, label) in enumerate(SECTIONS):
-            # --- Memory ---
-            t = memory.get(topic)
-            if t is None:
-                self._set_row(
-                    self.memory_table,
-                    row,
-                    [label, "Not enough data yet", "", "0 / 0", "No cards"],
-                )
-            elif not t.has_score:
-                self._set_row(
-                    self.memory_table,
-                    row,
-                    [
-                        label,
-                        "Not enough data yet",
-                        "Not enough data yet",
-                        f"{t.reviewed_cards} / {t.total_cards}",
-                        f"Needs ≥{MIN_REVIEWS} reviews & ≥{MIN_CARDS} cards",
-                    ],
-                )
-            else:
-                practiced = (
-                    f"{t.practiced_score * 100:.0f}%  "
-                    f"({t.practiced_low * 100:.0f}–{t.practiced_high * 100:.0f}%)"
-                )
-                category = f"{t.category_score * 100:.0f}%"
-                self._set_row(
-                    self.memory_table,
-                    row,
-                    [
-                        label,
-                        practiced,
-                        category,
-                        f"{t.reviewed_cards} / {t.total_cards}",
-                        f"{t.mastered_cards} mastered",
-                    ],
-                )
-
-            # --- Performance + Readiness (same estimate_readiness row) ---
+        sections = []
+        for topic, label in SECTIONS:
             s = readiness.get(topic)
-            if s is None:
-                self._set_row(
-                    self.performance_table,
-                    row,
-                    [label, "Not enough data yet", "", "0", "No practice attempts"],
-                )
-                self._set_row(
-                    self.readiness_table,
-                    row,
-                    [label, "Not enough data yet", "", "", ""],
-                )
-            elif not s.has_score:
-                self._set_row(
-                    self.performance_table,
-                    row,
-                    [
-                        label,
-                        "Not enough data yet",
-                        "",
-                        str(s.responses),
-                        f"Needs ≥{PERF_MIN_RESPONSES} responses",
-                    ],
-                )
-                self._set_row(
-                    self.readiness_table,
-                    row,
-                    [
-                        label,
-                        "Not enough data yet",
-                        "",
-                        "low",
-                        f"{s.within_budget_rate * 100:.0f}% within budget",
-                    ],
-                )
-            else:
-                self._set_row(
-                    self.performance_table,
-                    row,
-                    [
-                        label,
-                        f"{s.pct_correct * 100:.0f}%",
-                        f"{s.theta:+.2f}",
-                        str(s.responses),
-                        "scored",
-                    ],
-                )
-                self._set_row(
-                    self.readiness_table,
-                    row,
-                    [
-                        label,
-                        f"{s.score:.0f}",
-                        f"{s.score_low:.0f}–{s.score_high:.0f}",
-                        s.confidence,
-                        f"{s.within_budget_rate * 100:.0f}% in budget · ~{s.projected_section_minutes:.0f}/{SECTION_MINUTES} min",
-                    ],
-                )
+            sections.append(
+                {
+                    "label": label,
+                    "memory": self._memory_metric(memory.get(topic)),
+                    "performance": self._performance_metric(s),
+                    "readiness": self._readiness_metric(s),
+                }
+            )
 
         updated = time.strftime("%Y-%m-%d %H:%M:%S")
-        self.status_label.setText(
-            f"Last updated: {updated}\n"
-            f"Give-up: Memory needs ≥{MIN_REVIEWS} reviews & ≥{MIN_CARDS} cards; "
-            f"Performance/Readiness need ≥{PERF_MIN_RESPONSES} answered MCQs (with a precise "
-            "enough estimate).\n"
-            "Memory = term recall only (MCQ excluded). Performance = IRT ability from timed MCQs "
-            "(item difficulty is assumed, not calibrated). Readiness θ→score is an approximate "
-            "placeholder, not validated against real exam outcomes."
+        caption = (
+            f"Last updated {updated}. Memory = term recall only (MCQ excluded); a section "
+            f"scores after ≥{MIN_REVIEWS} reviews & ≥{MIN_CARDS} cards. Performance/Readiness "
+            f"need ≥{PERF_MIN_RESPONSES} answered MCQs with a precise-enough estimate. "
+            "Performance is IRT ability from timed MCQs (item difficulty assumed, not "
+            "calibrated); the Readiness θ→score is an approximate placeholder, not validated "
+            "against real exam outcomes."
         )
+        payload = {"sections": sections, "caption": caption}
+        self.web.eval(f"render({json.dumps(payload)});")
 
     def closeEvent(self, evt: QCloseEvent | None) -> None:
         saveGeom(self, "GmatReadinessDialog")
@@ -392,11 +339,11 @@ _CYCLE_DONE_KEY = "gmat_practice_cycle_done"
 # --- Daily practice quota (FSRS-independent) ---------------------------------
 # MCQ practice is a drill, not spaced repetition, so it is excluded from the
 # normal "due today" counts (see deckbrowser). Instead a fixed number of practice
-# questions are "due" each day, tracked here by day number (col.sched.today) so it
-# resets at the day rollover. Stored in the (synced) collection config so desktop
-# and AnkiDroid share one target + progress.
+# questions are "due" each day. "Done today" is derived directly from the review
+# log (distinct GMAT MCQ cards answered since the day's rollover) rather than a
+# hand-incremented counter — the revlog is the synced source of truth, so the
+# count is consistent across devices, self-correcting, and never spuriously resets.
 PRACTICE_TARGET_KEY = "gmat_practice_daily_target"
-_PRACTICE_DAILY_KEY = "gmat_practice_daily"  # {"day": <today>, "done": <count>}
 _DEFAULT_PRACTICE_TARGET = 20
 
 
@@ -408,26 +355,29 @@ def practice_daily_target(col) -> int:
         return _DEFAULT_PRACTICE_TARGET
 
 
-def _practice_done_today(col) -> int:
-    rec = col.get_config(_PRACTICE_DAILY_KEY, None)
-    if isinstance(rec, dict) and rec.get("day") == col.sched.today:
-        try:
-            return int(rec.get("done", 0))
-        except (TypeError, ValueError):
-            return 0
-    return 0
+def practice_done_today(col) -> int:
+    """Distinct GMAT MCQ practice cards answered since today's rollover, counted
+    from the review log (MCQ answers are logged as non-scheduling revlog rows)."""
+    nt = col.models.by_name(MCQ_NOTETYPE_NAME)
+    if nt is None:
+        return 0
+    day_start_ms = (col.sched.day_cutoff - 86400) * 1000
+    return (
+        col.db.scalar(
+            "select count(distinct r.cid) from revlog r "
+            "join cards c on r.cid = c.id "
+            "join notes n on c.nid = n.id "
+            "where n.mid = ? and r.id >= ?",
+            nt["id"],
+            day_start_ms,
+        )
+        or 0
+    )
 
 
 def practice_due_today(col) -> int:
     """Remaining practice questions in today's quota (never negative)."""
-    return max(0, practice_daily_target(col) - _practice_done_today(col))
-
-
-def record_practice_done(col) -> None:
-    """Count one answered practice question against today's quota (resets on a
-    new day)."""
-    done = _practice_done_today(col) + 1
-    col.set_config(_PRACTICE_DAILY_KEY, {"day": col.sched.today, "done": done})
+    return max(0, practice_daily_target(col) - practice_done_today(col))
 
 
 def _subtree_contains(node, did) -> bool:
@@ -459,6 +409,7 @@ def _counts_excl(node, practice_did) -> tuple[int, int, int]:
         return (new, learn, review)
     # No practice inside: the node's own (capped) aggregate is already correct.
     return (node.new_count, node.learn_count, node.review_count)
+
 
 # --- AI term-card grading (Deliverable: Friday AI) ---------------------------
 # When enabled, GMAT::Terms cards get a typed-recall input and the student's
@@ -525,6 +476,10 @@ function gmatReveal(chosen, correct, correctLetter) {
 function gmatPeerGuidance(html) {
   var p = document.getElementById('gmat-peer');
   if (p) { p.innerHTML = html; p.style.display = 'block'; }
+}
+function gmatPeerHide() {
+  var p = document.getElementById('gmat-peer');
+  if (p) { p.style.display = 'none'; p.innerHTML = ''; }
 }
 </script>
 """
@@ -668,6 +623,25 @@ def _render_peer_panel(reply) -> str:
     )
 
 
+def _render_peer_thinking() -> str:
+    """Placeholder shown immediately while the AI peer explanation loads."""
+    return (
+        '<div style="margin-top:14px;text-align:left;max-width:40em;'
+        "margin-left:auto;margin-right:auto;padding:12px 14px;border-radius:12px;"
+        'background:rgba(249,135,111,0.12);">'
+        '<div style="font-weight:700;margin-bottom:6px;">🐱 Study peer</div>'
+        '<div style="display:flex;align-items:center;gap:10px;opacity:.85;">'
+        '<span class="gmat-peer-spin"></span>'
+        "<span>Thinking about your answer&hellip;</span></div>"
+        "<style>.gmat-peer-spin{width:15px;height:15px;border:2px solid "
+        "rgba(216,90,64,.25);border-top-color:#d85a40;border-radius:50%;"
+        "display:inline-block;animation:gmat-spin .7s linear infinite;}"
+        "@keyframes gmat-spin{to{transform:rotate(360deg);}}"
+        "@media (prefers-reduced-motion){.gmat-peer-spin{animation-duration:2s;}}"
+        "</style></div>"
+    )
+
+
 def _maybe_peer_guidance(reviewer, chosen_letter: str) -> None:
     """Fetch an AI peer explanation off-thread and inject it into the card."""
     from aqt import gmat_ai
@@ -685,6 +659,10 @@ def _maybe_peer_guidance(reviewer, chosen_letter: str) -> None:
     card_id = card.id
     mw = reviewer.mw
 
+    # Show a "thinking" indicator right away so there's visible feedback while the
+    # peer explanation loads off-thread.
+    reviewer.web.eval(f"gmatPeerGuidance({json.dumps(_render_peer_thinking())});")
+
     def op(_col=None):
         return gmat_ai.peer_explain(
             question, options, correct, chosen_letter, explanation
@@ -695,10 +673,11 @@ def _maybe_peer_guidance(reviewer, chosen_letter: str) -> None:
             reply = fut.result()
         except Exception:
             reply = None
-        if not reply:
-            return
-        # Only inject if we're still on the same card.
+        # Only touch the panel if we're still on the same card.
         if reviewer.card is None or reviewer.card.id != card_id:
+            return
+        if not reply:
+            reviewer.web.eval("gmatPeerHide();")  # AI unavailable — clear the spinner
             return
         reviewer.web.eval(f"gmatPeerGuidance({json.dumps(_render_peer_panel(reply))});")
 
@@ -713,9 +692,9 @@ def _advance(reviewer) -> None:
     card = reviewer.card
     if practice_pool_active(reviewer):
         # Pool mode: no FSRS. Mark the card done for this cycle and draw the next.
+        # (Today's practice count is derived from the revlog, so nothing to record here.)
         if card is not None:
             pool_mark_done(reviewer.mw.col, card.id)
-            record_practice_done(reviewer.mw.col)
         reviewer.nextCard()
         return
     # An MCQ card reached via the normal scheduler (e.g. studying a parent deck):
@@ -924,11 +903,21 @@ def _render_ai_verdict(result) -> str:
         "good": "Good",
         "easy": "Easy",
     }.get(result.rating, result.rating)
+    # A distinct callout panel so the AI feedback reads as separate from the card's
+    # own definition. The reviewer paper card is always light (both themes), so fixed
+    # light panel colors are safe here.
     return (
-        '<div class="gmat-ai-verdict" style="margin-top:14px;text-align:left;'
-        'max-width:40em;margin-left:auto;margin-right:auto;">'
-        f'<div style="font-weight:700;color:{color};font-size:1.1em;">{label}</div>'
-        '<div style="margin-top:12px;display:flex;align-items:center;gap:8px;'
+        '<div class="gmat-ai-verdict" style="text-align:left;max-width:40em;'
+        "margin:18px auto;background:#ffffff;border:1px solid rgba(0,0,0,.08);"
+        f"border-left:5px solid {color};border-radius:14px;padding:14px 18px 16px;"
+        'box-shadow:0 2px 10px rgba(120,70,50,.10);">'
+        # Header badge marks this whole block as AI, not card content.
+        '<div style="display:flex;align-items:center;gap:6px;font-size:.72em;'
+        "font-weight:700;text-transform:uppercase;letter-spacing:.06em;"
+        'color:#d85a40;margin-bottom:8px;">'
+        "<span>🐱</span><span>AI feedback</span></div>"
+        f'<div style="font-weight:700;color:{color};font-size:1.15em;">{label}</div>'
+        '<div style="margin-top:10px;display:flex;align-items:center;gap:8px;'
         'flex-wrap:wrap;">'
         '<span style="opacity:.7;">AI recommends:</span>'
         f'<span style="display:inline-block;background:{rating_color};color:#fff;'
@@ -937,18 +926,94 @@ def _render_ai_verdict(result) -> str:
         '<span style="opacity:.6;">— press it (highlighted below) when ready</span>'
         "</div>"
         # Why this rating (1–2 sentences), not a repeat of the definition.
-        f'<div style="margin:10px 0 0;">{rationale}</div>'
-        '<div style="opacity:.6;font-size:.8em;margin-top:8px;">'
+        f'<div style="margin:10px 0 0;color:#241f1c;">{rationale}</div>'
+        '<div style="opacity:.55;font-size:.78em;margin-top:10px;'
+        'border-top:1px solid rgba(0,0,0,.06);padding-top:8px;">'
         "Graded by AI against this card's definition.</div>"
         "</div>"
     )
 
 
+def _thinking_panel_html() -> str:
+    """Placeholder shown immediately while the AI grades off-thread (grading can
+    take a few seconds; this gives instant visual feedback)."""
+    return (
+        '<div class="gmat-ai-verdict" id="gmat-ai-panel" style="text-align:left;'
+        "max-width:40em;margin:18px auto;background:#ffffff;border:1px solid "
+        "rgba(0,0,0,.08);border-left:5px solid #d85a40;border-radius:14px;"
+        'padding:14px 18px 16px;box-shadow:0 2px 10px rgba(120,70,50,.10);">'
+        '<div style="display:flex;align-items:center;gap:6px;font-size:.72em;'
+        "font-weight:700;text-transform:uppercase;letter-spacing:.06em;"
+        'color:#d85a40;margin-bottom:10px;"><span>🐱</span><span>AI feedback</span></div>'
+        '<div style="display:flex;align-items:center;gap:10px;color:#241f1c;">'
+        '<span class="gmat-spinner"></span>'
+        "<span>Grading your answer&hellip;</span></div>"
+        "<style>"
+        ".gmat-spinner{width:16px;height:16px;border:2px solid rgba(216,90,64,.25);"
+        "border-top-color:#d85a40;border-radius:50%;display:inline-block;"
+        "animation:gmat-spin .7s linear infinite;}"
+        "@keyframes gmat-spin{to{transform:rotate(360deg);}}"
+        "@media (prefers-reduced-motion){.gmat-spinner{animation-duration:2s;}}"
+        "</style></div>"
+    )
+
+
+def _swap_ai_panel(html_str: str) -> None:
+    """Replace the in-card thinking placeholder with final content (verdict or the
+    original diff), via the reviewer's card webview."""
+    web = getattr(aqt.mw, "web", None)
+    if web is None:
+        return
+    web.eval(
+        "(function(){var p=document.getElementById('gmat-ai-panel');"
+        f"if(p){{p.outerHTML={json.dumps(html_str)};}}}})();"
+    )
+
+
+def _start_ai_grade(
+    card, question: str, expected: str, provided: str, fallback: str
+) -> None:
+    """Grade off-thread, then swap the placeholder for the verdict (or revert to the
+    normal diff on failure) and highlight the recommended rating."""
+    mw = aqt.mw
+
+    def op(_col=None):
+        try:
+            from aqt import gmat_ai
+
+            return gmat_ai.grade(question, expected, provided)
+        except Exception:
+            return None
+
+    def on_done(fut) -> None:
+        try:
+            result = fut.result()
+        except Exception:
+            result = None
+        rev = getattr(mw, "reviewer", None)
+        # The card may have changed while grading — don't touch a different card.
+        if rev is None or rev.card is None or rev.card.id != card.id:
+            return
+        if result is None:
+            _swap_ai_panel(fallback)  # fall back to the exact-match diff
+            return
+        _swap_ai_panel(_render_ai_verdict(result))
+        try:
+            count = mw.col.sched.answerButtons(card)
+        except Exception:
+            count = 4
+        ease = _ease_for_rating(result.rating, count)
+        QTimer.singleShot(_HIGHLIGHT_DELAY_MS, lambda e=ease: _highlight_choice(e))
+
+    mw.taskman.run_in_background(op, on_done)
+
+
 def maybe_ai_grade_render(
     output: str, expected: str, provided: str, type_pattern: str
 ) -> str:
-    """`reviewer_will_render_compared_answer` hook. Returns AI verdict HTML for
-    GMAT::Terms cards when AI grading is on; otherwise the unchanged output."""
+    """`reviewer_will_render_compared_answer` hook. For GMAT::Terms cards with AI
+    grading on, show a "thinking" placeholder immediately and grade off-thread
+    (swapping in the verdict when ready); otherwise return the unchanged output."""
     global _last_ai_graded_card
     mw = aqt.mw
     reviewer = getattr(mw, "reviewer", None)
@@ -957,27 +1022,12 @@ def maybe_ai_grade_render(
     card = reviewer.card
     if not _is_terms_card(card):
         return output
-    try:
-        from aqt import gmat_ai
-
-        question = card.note().fields[0] if card.note().fields else ""
-        result = gmat_ai.grade(question, expected or "", provided or "")
-    except Exception:
-        return output
-    if result is None:
-        return output  # fall back to the exact-match diff (manual self-rating)
-    # Recommend a rating once per answer: highlight + focus the matching answer
-    # button so it's obvious, but let the student click it to advance (time to
-    # review). A small delay ensures the buttons have rendered first.
+    # Grade once per answer render; re-renders reuse the in-flight/finished result.
     if _last_ai_graded_card != card.id:
         _last_ai_graded_card = card.id
-        try:
-            count = mw.col.sched.answerButtons(card)
-        except Exception:
-            count = 4
-        ease = _ease_for_rating(result.rating, count)
-        QTimer.singleShot(_HIGHLIGHT_DELAY_MS, lambda e=ease: _highlight_choice(e))
-    return _render_ai_verdict(result)
+        question = card.note().fields[0] if card.note().fields else ""
+        _start_ai_grade(card, question, expected or "", provided or "", output)
+    return _thinking_panel_html()
 
 
 def _ease_for_rating(rating: str, button_count: int) -> int:
@@ -1101,10 +1151,19 @@ def toggle_ai_grading(mw: aqt.AnkiQt) -> None:
         tooltip("AI term grading enabled.", parent=mw)
 
 
+def _reset_ai_grade_guard(*args) -> None:
+    """Clear the once-per-answer guard when a new question is shown, so the same
+    card re-grades (e.g. after pressing Again) instead of getting stuck 'thinking'."""
+    global _last_ai_graded_card
+    _last_ai_graded_card = None
+
+
 def setup_ai_grading() -> None:
-    """Register the AI grading render hook (idempotent)."""
+    """Register the AI grading render + reset hooks (idempotent)."""
     if (
         maybe_ai_grade_render
         not in gui_hooks.reviewer_will_render_compared_answer._hooks
     ):
         gui_hooks.reviewer_will_render_compared_answer.append(maybe_ai_grade_render)
+    if _reset_ai_grade_guard not in gui_hooks.reviewer_did_show_question._hooks:
+        gui_hooks.reviewer_did_show_question.append(_reset_ai_grade_guard)

@@ -6,8 +6,12 @@ objectively-graded practice mode, an honest per-section readiness dashboard, and
 question recommender — all computed in Anki's shared Rust engine so the desktop app and the
 Android companion behave identically.
 
-There are **no AI features** — no generated cards, no chatbot, no LLM grading. Every score comes
-from your own review history and a transparent statistical model.
+On top of that engine sits an **optional** AI study layer: semantic grading of typed term recall, a
+first-person "study peer" that explains questions you miss, and a "Correct the Peer" practice game.
+It is **off by default** and uses **your own** OpenAI key — every AI call is grounded in the card's
+own content and fails safe, so the app works fully offline with AI switched off. The readiness
+**scores** themselves stay AI-free: they come only from your review history and a transparent
+statistical model, never from a language model.
 
 ---
 
@@ -67,12 +71,45 @@ from each question's own answer history (shrunk toward neutral for rarely-seen i
 exploration bonus so new questions still surface. With no data yet it falls back to a plain random
 draw — honest by construction.
 
-### 4. Shared Rust engine → identical on phone and desktop
+### 4. Optional AI study layer (bring your own key)
 
-All of the above lives in one Rust module (`rslib/src/gmat/`) behind protobuf RPCs, so the
-**AnkiDroid companion** computes the exact same scores and recommendations as the desktop app. The
-scores are explicit about their limits (item difficulty is assumed/observed, not professionally
-calibrated; the θ→score table is an approximate placeholder) and say so on screen.
+A single **"AI features"** switch on the dashboard turns on an LLM study layer. It's **off by
+default**, needs your own `OPENAI_API_KEY` (copy `.env.example` → `.env`; model defaults to
+`gpt-4o-mini`, overridable via `GMAT_AI_MODEL`), and stays out of the way otherwise — the readiness
+scores never touch it. Three features:
+
+- **Semantic term grading.** With AI on, `GMAT::Terms` cards get a typed-recall box. When you
+  answer, an LLM grades your typed answer for **meaning** (not exact string match) against the
+  card's own answer field, returns a verdict (correct / partial / incorrect), **recommends** an
+  Anki/FSRS button (Again/Hard/Good/Easy), and writes a 1–2 sentence rationale. The recommended
+  button is highlighted, but **you** click to advance.
+- **Study peer.** On a **wrong** practice MCQ, a first-person "study peer" explains the mistake,
+  grounded only in the card's stored explanation — with a small, sanitized inline SVG diagram when a
+  picture genuinely helps.
+- **Correct the Peer.** A reciprocal-teaching game: the AI role-plays a peer who solves a practice
+  question with a plausible-but-wrong answer; you critique it; the AI judges your critique, only
+  crediting you when you both give the right answer **and** explain why the peer was wrong.
+
+**Grounded and fail-safe by design.** Every prompt is anchored to the named card's content (the
+model is told not to override it with outside knowledge), all calls run off the UI thread, and any
+missing key / network error / bad response falls back to normal self-rating — the app never breaks
+because AI is unavailable.
+
+**Evaluated honestly.** `tools/gmat_eval/run_ai_eval.py` (`just eval-ai`) scores the AI features
+against small human-labelled gold sets and writes [docs/gmat/AI-EVAL-RESULTS.md](docs/gmat/AI-EVAL-RESULTS.md).
+It's reproducible offline from a committed response cache (temperature 0, no key needed to re-run).
+Current headline numbers: term-grader verdict accuracy **~85%** with a **2.8%** false-pass rate, and
+the "correct the peer" critique judge at **~96%**. These are measured against a small hand-authored
+set, **not** real student data or exam outcomes — see the report's honesty notes.
+
+### 5. Shared Rust engine → identical on phone and desktop
+
+The scoring engine (modes 1–3 above) lives in one Rust module (`rslib/src/gmat/`) behind protobuf
+RPCs, so the **AnkiDroid companion** computes the exact same scores and recommendations as the
+desktop app. The scores are explicit about their limits (item difficulty is assumed/observed, not
+professionally calibrated; the θ→score table is an approximate placeholder) and say so on screen.
+The AI layer is a desktop-side add-on; its self-contained HTML/JS + prompts are written so a later
+AnkiDroid port can reuse them and only swap the bridge.
 
 ---
 
@@ -108,8 +145,12 @@ builds every platform and publishes the installers here automatically.
    FSRS** in the deck options — the Memory score reads FSRS memory state, so scores appear only once
    FSRS is on and you've done some reviews.
 5. Open the dashboard from the **GMAT Readiness** menu item.
+6. _(Optional)_ To use the AI study features, copy `.env.example` → `.env`, set your
+   `OPENAI_API_KEY`, and flip the **AI features** switch on the dashboard. Leave it off to run
+   entirely offline.
 
-> The app runs fully offline with no AI: it shows your scores with no internet connection.
+> The readiness scores work fully offline with no internet connection. The AI study layer is
+> optional and off by default — only it needs a key and network access.
 
 ---
 
@@ -180,7 +221,11 @@ contributors: [CONTRIBUTORS](./CONTRIBUTORS)
 - **New GMAT engine:** `proto/anki/gmat.proto`, `rslib/src/gmat/` (`mod.rs`, `service.rs`),
   registered in `rslib/src/lib.rs`.
 - **Desktop UI:** `qt/aqt/gmat.py` (dashboard, "GMAT MCQ" note type/template, practice pool), with
-  hooks in `qt/aqt/reviewer.py`.
+  hooks in `qt/aqt/reviewer.py` and the dashboard hero in `qt/aqt/deckbrowser.py`.
+- **Optional AI layer:** `qt/aqt/gmat_ai.py` (provider-agnostic, stdlib-only grader + peer calls),
+  `qt/aqt/gmat_peer.py` ("Correct the Peer" dialog), and `.env.example` for the key.
+- **AI evals:** `tools/gmat_eval/run_ai_eval.py` (+ committed response cache), run via `just eval-ai`.
 - **Tests:** `pylib/tests/test_gmat.py` plus the Rust unit tests in `rslib/src/gmat/mod.rs`.
-- **Docs:** `docs/gmat/` (`PRD-wednesday.md`, `MODELS.md`, `DATA-SOURCES.md`, `EVAL-RESULTS.md`, …).
+- **Docs:** `docs/gmat/` (`PRD-wednesday.md`, `MODELS.md`, `DATA-SOURCES.md`, `EVAL-RESULTS.md`,
+  `AI-EVAL-RESULTS.md`, …).
 - **Android:** GMAT dashboard + reviewer wiring live in the separate AnkiDroid fork.

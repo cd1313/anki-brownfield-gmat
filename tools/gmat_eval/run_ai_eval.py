@@ -103,7 +103,7 @@ def install_cache(refresh: bool) -> tuple[dict, list[int]]:
         misses[0] += 1
         return _Replay(data)
 
-    urllib.request.urlopen = patched
+    urllib.request.urlopen = patched  # type: ignore[assignment]
     return cache, misses
 
 
@@ -224,7 +224,9 @@ def eval_term_grader(gmat_ai) -> list[str]:
 # --- Part B: peer features -------------------------------------------------
 def eval_peer(gmat_ai) -> list[str]:
     rng = random.Random(SEED)
-    mcqs = [r for r in parse_gmat_prep(MCQ_CSV) if r["Question"].strip() and options_of(r)]
+    mcqs = [
+        r for r in parse_gmat_prep(MCQ_CSV) if r["Question"].strip() and options_of(r)
+    ]
 
     # B1: peer_flawed_solution must pick a WRONG option with real reasoning.
     flawed_rows = rng.sample(mcqs, min(FLAWED_SAMPLE, len(mcqs)))
@@ -232,7 +234,9 @@ def eval_peer(gmat_ai) -> list[str]:
     for r in flawed_rows:
         opts = options_of(r)
         letters = {l for l, _ in opts}
-        res = gmat_ai.peer_flawed_solution(r["Question"], opts, r["Answer"], r["Explanation"])
+        res = gmat_ai.peer_flawed_solution(
+            r["Question"], opts, r["Answer"], r["Explanation"]
+        )
         if res is None:
             continue
         avail += 1
@@ -252,7 +256,11 @@ def eval_peer(gmat_ai) -> list[str]:
     for r in crit_rows:
         gold = r["gold_found_flaw"].strip().lower() == "true"
         res = gmat_ai.critique_check(
-            r["question"], r["correct"], r["explanation"], r["flawed_reasoning"], r["critique"]
+            r["question"],
+            r["correct"],
+            r["explanation"],
+            r["flawed_reasoning"],
+            r["critique"],
         )
         if res is None:
             c_skip += 1
@@ -272,7 +280,9 @@ def eval_peer(gmat_ai) -> list[str]:
     for r in explain_rows:
         opts = options_of(r)
         wrong = next((l for l, _ in opts if l != r["Answer"].upper()), "A")
-        res = gmat_ai.peer_explain(r["Question"], opts, r["Answer"], wrong, r["Explanation"])
+        res = gmat_ai.peer_explain(
+            r["Question"], opts, r["Answer"], wrong, r["Explanation"]
+        )
         if res is None:
             continue
         e_avail += 1
