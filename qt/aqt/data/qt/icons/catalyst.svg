@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120"
+     role="img" aria-label="CATalyst GMAT Prep">
+  <rect x="0" y="0" width="120" height="120" rx="26" fill="#f9876f"/>
+  <path d="M28 44 L24 16 L52 34 Z" fill="#ffffff"/>
+  <path d="M92 44 L96 16 L68 34 Z" fill="#ffffff"/>
+  <ellipse cx="60" cy="68" rx="40" ry="36" fill="#ffffff"/>
+  <circle cx="46" cy="62" r="9" fill="#f9876f"/>
+  <circle cx="74" cy="62" r="9" fill="#f9876f"/>
+  <circle cx="48" cy="64" r="4.5" fill="#ffffff"/>
+  <circle cx="72" cy="64" r="4.5" fill="#ffffff"/>
+  <path d="M56 76 L64 76 L60 82 Z" fill="#f9876f"/>
+  <g stroke="#f9876f" stroke-width="2.5" stroke-linecap="round">
+    <line x1="32" y1="74" x2="16" y2="70"/>
+    <line x1="32" y1="80" x2="16" y2="82"/>
+    <line x1="88" y1="74" x2="104" y2="70"/>
+    <line x1="88" y1="80" x2="104" y2="82"/>
+  </g>
+</svg>

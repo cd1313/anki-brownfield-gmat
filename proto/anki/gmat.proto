@@ -147,6 +147,24 @@ message ReadinessRequest {
 
 message ReadinessResponse {
   repeated SectionReadiness sections = 1;
+  // Projected overall score, computed from all section scores by the engine so
+  // desktop and mobile share one formula. Always present; see has_score.
+  OverallReadiness overall = 2;
+}
+
+// Projected GMAT Focus total (205–805) derived from the three section scores:
+// (Quant + Verbal + Data Insights − 180) × 20/3 + 205, rounded to the nearest
+// value ending in 5. The formula needs all three sections, so it abstains until
+// every section has a score.
+message OverallReadiness {
+  uint32 score = 1;
+  uint32 score_low = 2;
+  uint32 score_high = 3;
+  // How many sections contributed a score, and how many are required.
+  uint32 sections_scored = 4;
+  uint32 sections_total = 5;
+  // False until every required section has a score.
+  bool has_score = 6;
 }
 
 message SectionReadiness {
@@ -175,5 +193,18 @@ message SectionReadiness {
   // "low" | "medium" | "high".
   string confidence = 14;
   // False when below the give-up threshold -> caller shows "Not enough data".
+  // Statistical only (responses / SE / attempt-coverage); does NOT include the
+  // outline-coverage gate, so Performance can still show even when the deck
+  // skips outline topics.
   bool has_score = 15;
+  // --- Outline coverage (spec §7c) ---
+  // How many of the section's official outline topics the loaded deck contains,
+  // out of the total, plus the names of the missing ones. Computed by the
+  // engine so desktop and mobile share one outline definition.
+  uint32 outline_covered = 16;
+  uint32 outline_total = 17;
+  repeated string outline_missing = 18;
+  // False when outline coverage is below the abstain threshold. Readiness and
+  // the overall score abstain when this is false, even if has_score is true.
+  bool coverage_ok = 19;
 }

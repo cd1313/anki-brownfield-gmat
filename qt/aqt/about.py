@@ -65,7 +65,28 @@ def show(mw: aqt.AnkiQt) -> QDialog:
 
     # WebView contents
     ######################################################################
-    abouttext = "<center><img src='/_anki/imgs/anki-logo-thin.png'></center>"
+    # Friendly cat logo (theme-aware via CSS custom properties) in place of the
+    # old Anki wordmark, plus the CATalyst GMAT Prep name.
+    abouttext = """<center>
+<svg viewBox="0 0 120 120" role="img" aria-label="CATalyst GMAT Prep"
+     width="88" height="88">
+  <path d="M28 40 L24 12 L52 30 Z" fill="var(--fg)"/>
+  <path d="M92 40 L96 12 L68 30 Z" fill="var(--fg)"/>
+  <ellipse cx="60" cy="66" rx="42" ry="38" fill="var(--fg)"/>
+  <circle cx="45" cy="60" r="10" fill="var(--canvas-elevated)"/>
+  <circle cx="75" cy="60" r="10" fill="var(--canvas-elevated)"/>
+  <circle cx="47" cy="62" r="5" fill="var(--fg)"/>
+  <circle cx="73" cy="62" r="5" fill="var(--fg)"/>
+  <path d="M56 74 L64 74 L60 80 Z" fill="var(--accent-card)"/>
+  <g stroke="var(--canvas-elevated)" stroke-width="2" stroke-linecap="round">
+    <line x1="30" y1="72" x2="14" y2="68"/>
+    <line x1="30" y1="78" x2="14" y2="80"/>
+    <line x1="90" y1="72" x2="106" y2="68"/>
+    <line x1="90" y1="78" x2="106" y2="80"/>
+  </g>
+</svg>
+<h1 style="margin:0.2em 0 0">CATalyst GMAT Prep</h1>
+</center>"""
     lede = tr.about_anki_is_a_friendly_intelligent_spaced().replace("Anki", "Anki®")
     abouttext += f"<p>{lede}"
     abouttext += f"<p>{tr.about_anki_is_licensed_under_the_agpl3()}"

@@ -627,9 +627,9 @@ def disable_help_button(widget: QWidget) -> None:
 
 
 def setWindowIcon(widget: QWidget) -> None:
-    icon = QIcon()
-    icon.addPixmap(QPixmap("icons:anki.png"), QIcon.Mode.Normal, QIcon.State.Off)
-    widget.setWindowIcon(icon)
+    # CATalyst cat logo (SVG scales to any titlebar/dock size) in place of the
+    # old Anki icon.
+    widget.setWindowIcon(QIcon("icons:catalyst.svg"))
 
 
 # File handling

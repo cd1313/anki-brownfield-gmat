@@ -41,6 +41,9 @@ const IGNORED_FOLDERS: &[&str] = &[
     "./qt/installer/mac-template",
     // Agent tooling / skills — not part of the Anki/GMAT source (gitignored).
     "./.agents",
+    // Self-contained Firebase (Node) sub-project for the GMAT AI proxy — has its
+    // own toolchain/conventions and vendored node_modules.
+    "./firebase",
 ];
 
 fn main() -> Result<()> {

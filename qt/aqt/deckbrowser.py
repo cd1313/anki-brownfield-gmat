@@ -67,11 +67,13 @@ class DeckBrowserContent:
         tree {str} -- HTML of the deck tree section
         stats {str} -- HTML of the stats section
         hero {str} -- HTML of the dashboard hero (mascot, summary, upload)
+        taghelp {str} -- HTML of the GMAT card-tagging help box (below the tree)
     """
 
     tree: str
     stats: str
     hero: str = ""
+    taghelp: str = ""
 
 
 @dataclass
@@ -107,7 +109,7 @@ def _collect_gmat_stats(col: Collection) -> list[GmatSectionStat]:
                 min_responses=g.PERF_MIN_RESPONSES,
                 min_coverage=g.PERF_MIN_COVERAGE,
                 max_se=g.PERF_MAX_SE,
-            )
+            ).sections
         }
         out: list[GmatSectionStat] = []
         for topic, label in g.SECTIONS:
@@ -245,7 +247,7 @@ class DeckBrowser:
 <table cellspacing=0 cellpadding=3>
 %(tree)s
 </table>
-
+%(taghelp)s
 <br>
 %(stats)s
 </center>
@@ -295,6 +297,7 @@ class DeckBrowser:
             tree=self._renderDeckTree(data.tree),
             stats=self._renderStats(),
             hero=self._renderHero(),
+            taghelp=self._renderTagHelp(),
         )
         gui_hooks.deck_browser_will_render_content(self, content)
         self.web.stdHtml(
@@ -397,6 +400,34 @@ class DeckBrowser:
   </div>
   <div class="hero-actions">{upload}{actions}</div>
   {gmat_html}
+</div>
+"""
+
+    def _renderTagHelp(self) -> str:
+        """A box below the deck list explaining how to tag new GMAT cards, so
+        people adding their own cards can follow the tagging convention. Shown
+        only for GMAT collections (i.e. when there are GMAT section stats)."""
+        if not self._render_data.gmat:
+            return ""
+        return """
+<div class="gmat-taghelp">
+  <div class="gmat-taghelp-title">Adding your own cards</div>
+  <p>Tag every new card with a hierarchical <code>GMAT::</code> tag so it counts
+    toward the right section. Use <code>GMAT::&lt;Section&gt;::&lt;Subtopic&gt;</code>.</p>
+  <ul class="gmat-taglist">
+    <li><span class="gmat-tagsec">Quant</span>
+      <code>GMAT::Quant::ProblemSolving</code>, <code>GMAT::Quant::Algebra</code>,
+      <code>GMAT::Quant::Geometry</code></li>
+    <li><span class="gmat-tagsec">Verbal</span>
+      <code>GMAT::Verbal::CriticalReasoning</code>,
+      <code>GMAT::Verbal::ReadingComprehension</code>,
+      <code>GMAT::Verbal::SentenceCorrection</code></li>
+    <li><span class="gmat-tagsec">Data Insights</span>
+      <code>GMAT::DataInsights::DataSufficiency</code></li>
+  </ul>
+  <p>Put term flashcards in the <code>GMAT::Terms</code> deck and practice MCQs in
+    <code>GMAT::Practice</code>. A card with no <code>GMAT::&lt;Section&gt;</code> tag
+    won&rsquo;t count toward any section&rsquo;s scores.</p>
 </div>
 """
 

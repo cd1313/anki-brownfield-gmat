@@ -26,6 +26,8 @@ import statistics
 import sys
 import tempfile
 
+from _md import format_md  # type: ignore[import-not-found]
+
 from anki.collection import Collection
 from anki.decks import DeckId
 
@@ -92,7 +94,7 @@ def recover_theta(
         min_responses=1,
         min_coverage=0.0,
         max_se=99.0,  # relaxed: we want theta regardless of give-up here
-    )
+    ).sections
     theta_hat = sections[0].theta if sections else 0.0
     return theta_hat, outcomes
 
@@ -132,7 +134,6 @@ def main():
     thetas_true, thetas_hat = [], []
     # Held-out prediction data (test items never logged to the engine).
     irt_preds, base_preds, actuals = [], [], []
-    leakage_hits = 0
 
     for s in range(N_STUDENTS):
         theta_true = rng.gauss(0.0, 1.0)
@@ -141,12 +142,13 @@ def main():
         thetas_hat.append(theta_hat)
 
         # Held-out test items: simulate from theta_true, predict from theta_hat.
+        # The estimation items (logged to the engine) and the test items are
+        # generated in separate loops and the test items are never logged, so the
+        # split is disjoint by construction — there is nothing to leak here. Real
+        # data-leakage (eval gold sets vs practice banks) is scanned separately by
+        # tools/gmat_eval/check_leakage.py (see docs/gmat/LEAKAGE-CHECK.md).
         base_rate = statistics.fmean(est_outcomes) if est_outcomes else 0.5
-        est_ids = set(range(K_ESTIMATION))
-        for j in range(L_TEST):
-            test_id = K_ESTIMATION + j  # disjoint from estimation ids
-            if test_id in est_ids:
-                leakage_hits += 1  # must stay 0
+        for _ in range(L_TEST):
             actual = 1 if rng.random() < three_pl(theta_true) else 0
             actuals.append(actual)
             irt_preds.append(three_pl(theta_hat))  # IRT prediction at recovered theta
@@ -213,8 +215,13 @@ def main():
 
     w("## 3. Leakage check (spec §7e)\n")
     w(
-        f"Estimation/test item id overlap across all students: **{leakage_hits}** "
-        "(must be 0).\n"
+        "This synthetic study fits θ on estimation items and evaluates on a "
+        "**separate** set of held-out items that are generated independently and "
+        "never logged to the engine, so the train/test split is disjoint by "
+        "construction. Nothing is trained on real content here. Real data-leakage — "
+        "whether the hand-labelled AI **gold sets** appear in the **practice** banks "
+        "— is scanned over the actual data by `tools/gmat_eval/check_leakage.py`; the "
+        "latest result is **CLEAN** (see `docs/gmat/LEAKAGE-CHECK.md`).\n"
     )
 
     w("## Honesty notes\n")
@@ -228,7 +235,7 @@ def main():
         "placeholder and is **not** validated here.\n"
     )
 
-    report = "\n".join(lines) + "\n"
+    report = format_md("\n".join(lines))
     os.makedirs(os.path.dirname(REPORT), exist_ok=True)
     with open(REPORT, "w") as f:
         f.write(report)

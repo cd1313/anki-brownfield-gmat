@@ -1,17 +1,20 @@
-# Anki — GMAT Focus Edition
+# CATalyst GMAT Prep (Anki fork)
 
 A fork of [Anki](https://apps.ankiweb.net) turned into a focused **GMAT study app** for
 desktop and Android. It keeps Anki's spaced-repetition core and adds a GMAT layer on top: an
-objectively-graded practice mode, an honest per-section readiness dashboard, and an adaptive
-question recommender — all computed in Anki's shared Rust engine so the desktop app and the
-Android companion behave identically.
+objectively-graded practice mode, an honest per-section readiness dashboard with a projected
+**overall 205–805 score**, and an adaptive question recommender — all computed in Anki's shared
+Rust engine so the desktop app and the Android app behave identically.
 
 On top of that engine sits an **optional** AI study layer: semantic grading of typed term recall, a
 first-person "study peer" that explains questions you miss, and a "Correct the Peer" practice game.
-It is **off by default** and uses **your own** OpenAI key — every AI call is grounded in the card's
-own content and fails safe, so the app works fully offline with AI switched off. The readiness
-**scores** themselves stay AI-free: they come only from your review history and a transparent
-statistical model, never from a language model.
+It is **off by default**, every AI call is grounded in the card's own content and fails safe, so the
+app works fully offline with AI switched off. The readiness **scores** themselves stay AI-free: they
+come only from your review history and a transparent statistical model, never from a language model.
+
+The Android app is a full peer of the desktop app, not a viewer: it ships the same dashboard,
+overall score, adaptive practice, and a Kotlin port of the AI layer. See
+[the Android fork's README](../Ankidroid-brownfield-gmat/README.md).
 
 ---
 
@@ -41,7 +44,10 @@ stock Anki does **not** have:
 - **Practice** (`GMAT::Practice` deck) — multiple-choice questions using a new **"GMAT MCQ"** note
   type (stem, options A–E, stored answer, explanation). You pick an option and the **engine grades
   it objectively** against the stored answer — you never self-grade a practice question. Attempts
-  are recorded as non-scheduling entries, so MCQ results **never** contaminate the Memory score.
+  are recorded as non-scheduling entries, so MCQ results **never** contaminate the Memory score. A
+  **2-minute per-question countdown** (the real exam's ~2 min/question pace) runs while you answer
+  and keeps ticking into the negative so you can see when you're over budget — it's a pacing aid, not
+  a hard cutoff, and the elapsed time feeds the readiness pacing check.
 
 ### 2. GMAT Readiness dashboard — three honest scores, never blended
 
@@ -60,7 +66,16 @@ data yet"_ instead of a misleading number.
   timed MCQ answers. _Give-up:_ needs ≥ **20** answered MCQs and an ability standard error ≤ **0.7**.
 - **Readiness** — a projected section score (**60–90**) with a range and confidence, combining
   accuracy (θ → score) with a **pacing** check (your median time/question projected across a full
-  45-minute section).
+  45-minute section). _Outline-coverage gate (spec §7c):_ a section that skips too much of the
+  official GMAT outline (below **50%** of its question types present in the deck) refuses to show a
+  readiness score — a deck that's missing a whole high-weight type must not read as "ready." The
+  outline and this gate live in the shared engine, so desktop and mobile abstain identically.
+- **Projected overall score** — the three section scores rolled into a single **GMAT Focus total on
+  the 205–805 scale** with a ± margin of error, via the official-style formula
+  `(Quant + Verbal + Data Insights − 180) × 20⁄3 + 205`, rounded to the nearest value ending in 5.
+  The engine computes it (single source of truth for both apps) and **abstains until all three
+  sections have a readiness score**, so a coverage- or data-suppressed section can't inflate the
+  total.
 
 ### 3. Adaptive practice recommender (IRT-based)
 
@@ -76,7 +91,9 @@ draw — honest by construction.
 A single **"AI features"** switch on the dashboard turns on an LLM study layer. It's **off by
 default**, needs your own `OPENAI_API_KEY` (copy `.env.example` → `.env`; model defaults to
 `gpt-4o-mini`, overridable via `GMAT_AI_MODEL`), and stays out of the way otherwise — the readiness
-scores never touch it. Three features:
+scores never touch it. The Android app carries a **Kotlin port** of this same layer (`GmatAi.kt`),
+which either takes your own key or, when configured, calls a **Firebase-proxied** OpenAI endpoint so
+phone users don't have to paste a key. Three features:
 
 - **Semantic term grading.** With AI on, `GMAT::Terms` cards get a typed-recall box. When you
   answer, an LLM grades your typed answer for **meaning** (not exact string match) against the
@@ -116,16 +133,18 @@ the report's honesty notes.
 **What we deliberately skipped (for now):** no AI-generated cards (content risk + prompt-injection
 surface), no chatbot, no LLM anywhere in the readiness scores (kept statistical and auditable), and
 no vector-search baseline in the eval (it needs an embedding model/key; keyword overlap is the
-standard no-model baseline). AI is desktop-only this milestone.
+standard no-model baseline). The eval harness itself (`just eval-ai`) is desktop-side; the shipped AI
+features run on both desktop and Android.
 
 ### 5. Shared Rust engine → identical on phone and desktop
 
-The scoring engine (modes 1–3 above) lives in one Rust module (`rslib/src/gmat/`) behind protobuf
-RPCs, so the **AnkiDroid companion** computes the exact same scores and recommendations as the
-desktop app. The scores are explicit about their limits (item difficulty is assumed/observed, not
-professionally calibrated; the θ→score table is an approximate placeholder) and say so on screen.
-The AI layer is a desktop-side add-on; its self-contained HTML/JS + prompts are written so a later
-AnkiDroid port can reuse them and only swap the bridge.
+The scoring engine (modes 1–3 above), the projected overall score, and the outline-coverage gate all
+live in one Rust module (`rslib/src/gmat/`) behind protobuf RPCs, so the **Android app** computes the
+exact same scores, totals, coverage verdicts, and recommendations as the desktop app — no logic is
+reimplemented per platform. The scores are explicit about their limits (item difficulty is
+assumed/observed, not professionally calibrated; the θ→score table is an approximate placeholder) and
+say so on screen. The AI study layer has been ported to Kotlin (`GmatAi.kt`) mirroring the desktop
+prompts, so it runs on the phone too.
 
 ---
 
@@ -216,11 +235,52 @@ Then install it with the [macOS install steps](#installing-on-macos-from-the-dmg
 - **Other platforms:** the same `tools/build-installer` works on Linux/Windows (initialize the
   matching `linux-template` / `windows-template` submodule instead); the output extension differs.
 
-**Android companion:** the phone app is a separate
-[AnkiDroid](https://github.com/ankidroid/Anki-Android) fork that embeds this repo's Rust backend
-(built via `Anki-Android-Backend`), so the GMAT engine is shared rather than reimplemented.
+### Building & running the Android companion
+
+The phone app is a separate [AnkiDroid](https://github.com/ankidroid/Anki-Android) fork that
+embeds **this repo's Rust backend** (compiled to an Android `.so` via `Anki-Android-Backend`/rsdroid,
+which auto-generates the GMAT RPCs into `GeneratedBackend.kt`), so the GMAT engine is **shared, not
+reimplemented**. Three sibling repos are involved (see [`docs/gmat/ANKIDROID-PARITY.md`](docs/gmat/ANKIDROID-PARITY.md)):
+`anki-brownfield-gmat` (this fork), `Anki-Android-Backend` (rsdroid), `Ankidroid-brownfield-gmat`
+(the Kotlin app).
+
+```sh
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+cd ../Ankidroid-brownfield-gmat
+./gradlew :AnkiDroid:assemblePlayDebug     # -> AnkiDroid/build/outputs/apk/play/debug/AnkiDroid-play-arm64-v8a-debug.apk
+adb install -r -d AnkiDroid/build/outputs/apk/play/debug/AnkiDroid-play-arm64-v8a-debug.apk
+```
+
+Then in the app: **Settings → Reviewer → New reviewer** (pref key `newReviewerOptions`) must be **on**
+for the GMAT reviewer features; open the GMAT dashboard from the DeckPicker overflow → **GMAT**.
+The debug APK is a sideloadable build, which is what the spec accepts for the phone deliverable
+(signed APK / TestFlight / sideload). Point it at `just sync-server` (custom sync server) to sync with
+the desktop — see [`docs/gmat/SYNC.md`](docs/gmat/SYNC.md).
 
 ---
+
+## The Rust engine change (spec §7a)
+
+The core change is a **new backend module in Anki's Rust engine**, not a Python-only screen:
+[`rslib/src/gmat/`](rslib/src/gmat/) (`mod.rs` + `service.rs`) with a new protobuf service
+[`proto/anki/gmat.proto`](proto/anki/gmat.proto) (`GmatService`, 6 RPCs), called from Python via
+`col._backend.*`. It computes, on `Collection`:
+
+- **`get_topic_mastery`** — per-section FSRS-retrievability mastery (time-gated), the Memory score.
+- **`grade_mcq` / `record_graded_attempt`** — engine-side objective MCQ grading, logged as
+  non-scheduling ("cramming") revlog entries so practice never contaminates FSRS.
+- **`next_practice_card` / `mark_practice_done`** — the practice pool: random, or IRT weakness-first
+  adaptive recommendation when a tag prefix is set.
+- **`estimate_readiness`** — per-section IRT ability (θ, EAP) → projected GMAT-Focus score + range,
+  the per-section outline-coverage verdict, and the rolled-up projected **overall 205–805 score**.
+
+**Tests:** 39 Rust unit tests in `rslib/src/gmat/mod.rs` (incl. an undo + no-corruption test, the
+overall-score formula, and the coverage gate) plus 7 Python tests in `pylib/tests/test_gmat.py` that
+call the change through rsbridge. Run with
+`just test-rust` and `just test-py`. Why Rust, not Python: it reads FSRS memory state for up to 50k
+cards fast enough to power the dashboard off the UI thread, and — because the engine is shared — the
+same change ships to the AnkiDroid companion. See [`docs/gmat/MODELS.md`](docs/gmat/MODELS.md).
 
 ## License & attribution
 
@@ -240,8 +300,26 @@ contributors: [CONTRIBUTORS](./CONTRIBUTORS)
   hooks in `qt/aqt/reviewer.py` and the dashboard hero in `qt/aqt/deckbrowser.py`.
 - **Optional AI layer:** `qt/aqt/gmat_ai.py` (provider-agnostic, stdlib-only grader + peer calls),
   `qt/aqt/gmat_peer.py` ("Correct the Peer" dialog), and `.env.example` for the key.
-- **AI evals:** `tools/gmat_eval/run_ai_eval.py` (+ committed response cache), run via `just eval-ai`.
+- **Evals & tools:** `tools/gmat_eval/` — `run_ai_eval.py` (AI features, `just eval-ai`),
+  `run_eval.py` (IRT performance, `just eval-perf`), `run_memory_eval.py` (memory calibration,
+  `just eval-memory`), `check_leakage.py` (`just leak-check`), `bench.py` (`just bench`),
+  `crash_test.py` (`just crash-test`), `perf_vs_memory.py` (`just perf-vs-memory`).
 - **Tests:** `pylib/tests/test_gmat.py` plus the Rust unit tests in `rslib/src/gmat/mod.rs`.
-- **Docs:** `docs/gmat/` (`PRD-wednesday.md`, `MODELS.md`, `DATA-SOURCES.md`, `EVAL-RESULTS.md`,
-  `AI-EVAL-RESULTS.md`, …).
-- **Android:** GMAT dashboard + reviewer wiring live in the separate AnkiDroid fork.
+- **Docs:** `docs/gmat/` (`PRD-wednesday.md`, `MODELS.md` + one-pagers `model-memory.md` /
+  `model-performance.md` / `model-readiness.md`, `DATA-SOURCES.md`, `EVAL-RESULTS.md`,
+  `AI-EVAL-RESULTS.md`, `MEMORY-CALIBRATION.md`, `COVERAGE.md`, `LEAKAGE-CHECK.md`, `BENCHMARK.md`,
+  `CRASH-TEST.md`, `PERF-VS-MEMORY.md`, `STUDY-FEATURE.md`, `study-materials.md`, `SYNC.md`,
+  `ANKIDROID-PARITY.md`).
+- **Android:** the separate AnkiDroid fork (`Ankidroid-brownfield-gmat`) adds the GMAT dashboard
+  (`GmatDashboardActivity`) with the same three scores + overall + coverage gate, the "Correct the
+  Peer" screen, the Kotlin AI port (`gmat/GmatAi.kt`) with optional Firebase proxy
+  (`gmat/GmatFirebase.kt`), and a bundled ~7k-card deck auto-imported on first run
+  (`gmat/GmatBuiltinDeck.kt`) — all reading this repo's shared Rust engine.
+
+**Future-merge difficulty (upstream Anki rebases): LOW.** The change is almost entirely **additive** —
+a new `rslib/src/gmat/` module, a new `proto/anki/gmat.proto`, new `qt/aqt/gmat*.py`, and new
+`tools/`/`docs/` files, none of which upstream touches. Only a **handful** of upstream files are
+edited, each by a few lines: `rslib/src/lib.rs` (register the module), `rslib/proto/src/lib.rs`
+(register the proto), `qt/aqt/reviewer.py` + `qt/aqt/deckbrowser.py` (hooks / dashboard entry point),
+and a light rebrand (`qt/aqt/about.py`, app name/icon). Conflicts, if any, would be small localized
+additions in those files; the engine logic lives in files upstream will never modify.

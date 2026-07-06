@@ -46,6 +46,10 @@ const SHRINK_K: f32 = 4.0;
 const EXPLORE_BONUS: f32 = 0.5;
 /// Tiny random tie-break added to each candidate's score, for variety.
 const RECOMMEND_JITTER: f32 = 0.02;
+/// Minimum logged responses before a category's (sub-section) ability estimate
+/// is trusted to steer the recommender. Below this the card falls back to its
+/// section θ, so a data-sparse category can't dominate on noise.
+const CATEGORY_MIN_RESPONSES: u32 = 8;
 
 /// Per-topic accumulator while scanning cards.
 #[derive(Default)]
@@ -96,7 +100,9 @@ impl Collection {
             let Some(note) = self.storage.get_note(card.note_id)? else {
                 continue;
             };
-            let card_topics = topics_for_tags(&note.tags, &input.tag_prefix);
+            // Memory mastery stays section-level (depth 1): term cards carry no
+            // sub-topic tags, and the dashboard is unchanged.
+            let card_topics = topics_for_tags(&note.tags, &input.tag_prefix, 1);
             if card_topics.is_empty() {
                 continue;
             }
@@ -327,12 +333,12 @@ impl Collection {
         // attempt counts, and collect the cards still available this cycle.
         struct Candidate {
             cid: CardId,
-            sections: Vec<String>,
+            topics: Vec<String>,
             guessing: f32,
             attempts: u32,
             correct: u32,
         }
-        let mut section_responses: HashMap<String, Vec<(bool, f32)>> = HashMap::new();
+        let mut topic_responses: HashMap<String, Vec<(bool, f32)>> = HashMap::new();
         let mut candidates: Vec<Candidate> = Vec::new();
 
         for cid in cids {
@@ -342,8 +348,11 @@ impl Collection {
             let Some(note) = self.storage.get_note(card.note_id)? else {
                 continue;
             };
-            let sections = topics_for_tags(&note.tags, &input.tag_prefix);
-            if sections.is_empty() {
+            // Depth 2: aggregate at both the section and its sub-topic
+            // (category) levels, so the recommender can target the weakest
+            // category and fall back to the section when a category is sparse.
+            let topics = topics_for_tags(&note.tags, &input.tag_prefix, 2);
+            if topics.is_empty() {
                 continue;
             }
             let nt = self
@@ -362,9 +371,9 @@ impl Collection {
                 if is_correct {
                     correct += 1;
                 }
-                for s in &sections {
-                    section_responses
-                        .entry(s.clone())
+                for t in &topics {
+                    topic_responses
+                        .entry(t.clone())
                         .or_default()
                         .push((is_correct, c));
                 }
@@ -373,7 +382,7 @@ impl Collection {
             if practice_done_cycle(&card.custom_data) != Some(input.cycle) {
                 candidates.push(Candidate {
                     cid,
-                    sections,
+                    topics,
                     guessing: c,
                     attempts,
                     correct,
@@ -389,12 +398,25 @@ impl Collection {
             });
         }
 
-        // Per-section ability. Sections with no responses fall back to the prior
-        // (θ ≈ 0) via eap_ability, i.e. neutral priority.
-        let section_theta: HashMap<String, f32> = section_responses
+        // Per-topic ability (both section and category keys). Topics with no
+        // responses fall back to the prior (θ ≈ 0) via eap_ability, i.e. neutral
+        // priority.
+        let topic_theta: HashMap<String, f32> = topic_responses
             .iter()
-            .map(|(s, r)| (s.clone(), eap_ability(r).0))
+            .map(|(t, r)| (t.clone(), eap_ability(r).0))
             .collect();
+
+        // A topic is a category (sub-section) when it has more than one segment
+        // below the prefix; one segment is a section.
+        let prefix = input.tag_prefix.as_str();
+        let segs_below = |topic: &str| -> usize {
+            let rest = if prefix.is_empty() {
+                topic
+            } else {
+                topic.strip_prefix(&format!("{prefix}::")).unwrap_or(topic)
+            };
+            rest.split("::").filter(|s| !s.is_empty()).count()
+        };
 
         // Pass 2: score each available card and take the argmax (jitter breaks
         // ties and, on a cold collection where all scores are equal, randomises).
@@ -402,13 +424,31 @@ impl Collection {
         let mut rng = rand::rng();
         let mut best: Option<(f32, CardId)> = None;
         for cand in &candidates {
-            // Representative section = the card's weakest tagged section.
-            let theta = cand
-                .sections
+            // Prefer the card's weakest CATEGORY that has enough responses to be
+            // reliable; otherwise fall back to its weakest SECTION (the original
+            // behavior). Missing θ defaults to the prior (0.0).
+            let category_theta = cand
+                .topics
                 .iter()
-                .map(|s| section_theta.get(s).copied().unwrap_or(0.0))
+                .filter(|t| segs_below(t) >= 2)
+                .filter(|t| {
+                    topic_responses.get(*t).map_or(0, |r| r.len() as u32) >= CATEGORY_MIN_RESPONSES
+                })
+                .map(|t| topic_theta.get(t).copied().unwrap_or(0.0))
                 .fold(f32::INFINITY, f32::min);
-            let theta = if theta.is_finite() { theta } else { 0.0 };
+            let section_theta = cand
+                .topics
+                .iter()
+                .filter(|t| segs_below(t) == 1)
+                .map(|t| topic_theta.get(t).copied().unwrap_or(0.0))
+                .fold(f32::INFINITY, f32::min);
+            let theta = if category_theta.is_finite() {
+                category_theta
+            } else if section_theta.is_finite() {
+                section_theta
+            } else {
+                0.0
+            };
             let score = recommend_score(theta, cand.guessing, cand.attempts, cand.correct)
                 + rng.random::<f32>() * RECOMMEND_JITTER;
             if best.map(|(bs, _)| score > bs).unwrap_or(true) {
@@ -468,7 +508,9 @@ impl Collection {
             let Some(note) = self.storage.get_note(card.note_id)? else {
                 continue;
             };
-            let topics = topics_for_tags(&note.tags, &input.tag_prefix);
+            // Section-wide readiness stays section-level (depth 1); the
+            // dashboard's per-section performance number is unchanged.
+            let topics = topics_for_tags(&note.tags, &input.tag_prefix, 1);
             if topics.is_empty() {
                 continue;
             }
@@ -504,6 +546,19 @@ impl Collection {
                 }
             }
         }
+
+        // Outline coverage is measured over the whole collection (does the deck
+        // contain each official topic), independent of the practice search, so it
+        // is computed here where we can borrow `self` mutably for the searches.
+        let coverage_by_section: HashMap<String, OutlineCoverage> = {
+            let names: Vec<String> = sections.keys().cloned().collect();
+            let mut m = HashMap::new();
+            for name in names {
+                let cov = self.section_outline_coverage(&name)?;
+                m.insert(name, cov);
+            }
+            m
+        };
 
         let mut out: Vec<_> = sections
             .into_iter()
@@ -554,6 +609,12 @@ impl Collection {
                     (0.0, 0.0, 0.0, String::new())
                 };
 
+                let cov = coverage_by_section.get(&section);
+                let (outline_covered, outline_total, outline_missing, coverage_ok) = match cov {
+                    Some(c) => (c.covered, c.total, c.missing.clone(), c.ok),
+                    None => (0, 0, Vec::new(), true),
+                };
+
                 anki_proto::gmat::SectionReadiness {
                     section,
                     theta,
@@ -570,12 +631,44 @@ impl Collection {
                     score_high,
                     confidence,
                     has_score,
+                    outline_covered,
+                    outline_total,
+                    outline_missing,
+                    coverage_ok,
                 }
             })
             .collect();
         out.sort_by(|a, b| a.section.cmp(&b.section));
 
-        Ok(anki_proto::gmat::ReadinessResponse { sections: out })
+        let overall = compute_overall(&out, &input.tag_prefix);
+        Ok(anki_proto::gmat::ReadinessResponse {
+            sections: out,
+            overall: Some(overall),
+        })
+    }
+
+    /// Outline coverage for one section: how many of its official topics the
+    /// whole collection contains. `ok` is false when coverage is below
+    /// [`COVERAGE_ABSTAIN`], which makes readiness (and the overall) abstain.
+    fn section_outline_coverage(&mut self, section: &str) -> Result<OutlineCoverage> {
+        let topics = gmat_outline(section);
+        let total = topics.len() as u32;
+        let mut covered = 0;
+        let mut missing = Vec::new();
+        for (name, search) in topics {
+            if self.search_cards(*search, SortMode::NoOrder)?.is_empty() {
+                missing.push((*name).to_string());
+            } else {
+                covered += 1;
+            }
+        }
+        let ok = total == 0 || covered as f32 / total as f32 >= COVERAGE_ABSTAIN;
+        Ok(OutlineCoverage {
+            covered,
+            total,
+            missing,
+            ok,
+        })
     }
 }
 
@@ -653,6 +746,133 @@ fn recommend_score(theta: f32, c: f32, attempts: u32, correct: u32) -> f32 {
 /// GMAT Focus Edition section score bounds.
 const SCORE_MIN: f32 = 60.0;
 const SCORE_MAX: f32 = 90.0;
+
+/// GMAT Focus Edition total score bounds (the 205–805 scale steps by 10).
+const TOTAL_MIN: u32 = 205;
+const TOTAL_MAX: u32 = 805;
+
+/// Section-score tags that make up the GMAT Focus total. The overall score
+/// needs all three; they are matched against the `section` field (tag_prefix +
+/// suffix).
+const GMAT_SECTION_SUFFIXES: [&str; 3] = ["Quant", "Verbal", "DataInsights"];
+
+/// A section abstains from a readiness score when its outline coverage falls
+/// below this fraction — a deck that skips a whole high-weight question type
+/// must not read as "ready" (spec §7c). See docs/gmat/COVERAGE.md.
+const COVERAGE_ABSTAIN: f32 = 0.5;
+
+/// The official GMAT Focus question types per section, each paired with the
+/// Anki search that detects whether the loaded deck covers it. Single source of
+/// truth for both dashboards (mirrors what used to live in the Qt layer).
+/// Matched by section suffix so it is independent of the caller's tag prefix.
+const QUANT_OUTLINE: [(&str, &str); 2] = [
+    ("Arithmetic", "tag:GMAT::Quant::Arithmetic*"),
+    ("Algebra", "tag:GMAT::Quant::Algebra*"),
+];
+const VERBAL_OUTLINE: [(&str, &str); 2] = [
+    (
+        "Critical Reasoning",
+        "tag:GMAT::Verbal::CriticalReasoning* OR tag:GMAT::Verbal::CR*",
+    ),
+    (
+        "Reading Comprehension",
+        "tag:GMAT::Verbal::ReadingComprehension* OR tag:GMAT::Verbal::RC* \
+         OR (tag:GMAT::Verbal -tag:GMAT::Verbal::*)",
+    ),
+];
+const DATA_INSIGHTS_OUTLINE: [(&str, &str); 5] = [
+    (
+        "Data Sufficiency",
+        "tag:GMAT::DataInsights::DataSufficiency* OR tag:GMAT::DataInsights::DS*",
+    ),
+    (
+        "Multi-Source Reasoning",
+        "tag:GMAT::DataInsights::MultiSource*",
+    ),
+    (
+        "Table Analysis",
+        "tag:GMAT::DataInsights::TableAnalysis* \
+         OR (tag:GMAT::DataInsights -tag:GMAT::DataInsights::*)",
+    ),
+    (
+        "Graphics Interpretation",
+        "tag:GMAT::DataInsights::Graphics*",
+    ),
+    ("Two-Part Analysis", "tag:GMAT::DataInsights::TwoPart*"),
+];
+
+/// The outline topics for a section (matched by suffix); empty when the section
+/// is not one of the three GMAT Focus sections (then coverage never gates).
+fn gmat_outline(section: &str) -> &'static [(&'static str, &'static str)] {
+    if section.ends_with("Quant") {
+        &QUANT_OUTLINE
+    } else if section.ends_with("Verbal") {
+        &VERBAL_OUTLINE
+    } else if section.ends_with("DataInsights") {
+        &DATA_INSIGHTS_OUTLINE
+    } else {
+        &[]
+    }
+}
+
+/// Per-section outline coverage: how many official topics the deck contains.
+struct OutlineCoverage {
+    covered: u32,
+    total: u32,
+    missing: Vec<String>,
+    /// True when coverage is high enough to allow a readiness score.
+    ok: bool,
+}
+
+/// GMAT Focus total from the summed section scores (each 60–90):
+/// (Quant + Verbal + Data Insights − 180) × 20/3 + 205, rounded to the nearest
+/// value ending in 5 (the 205–805 scale steps by 10) and clamped. Single source
+/// of truth for both the desktop and mobile dashboards.
+fn total_score(section_sum: f32) -> u32 {
+    let raw = (section_sum - 180.0) * 20.0 / 3.0 + 205.0;
+    let rounded = ((raw - 5.0) / 10.0).round() * 10.0 + 5.0;
+    (rounded as i32).clamp(TOTAL_MIN as i32, TOTAL_MAX as i32) as u32
+}
+
+/// Projected overall readiness from the per-section scores. Abstains until
+/// every required section has a *readiness* score — statistically scored
+/// (has_score) AND past the outline-coverage gate (coverage_ok) — since the
+/// total formula needs all three.
+fn compute_overall(
+    sections: &[anki_proto::gmat::SectionReadiness],
+    tag_prefix: &str,
+) -> anki_proto::gmat::OverallReadiness {
+    let sections_total = GMAT_SECTION_SUFFIXES.len() as u32;
+    let scored: Vec<&anki_proto::gmat::SectionReadiness> = GMAT_SECTION_SUFFIXES
+        .iter()
+        .filter_map(|suffix| {
+            let tag = format!("{tag_prefix}::{suffix}");
+            sections
+                .iter()
+                .find(|s| s.section == tag && s.has_score && s.coverage_ok)
+        })
+        .collect();
+    let sections_scored = scored.len() as u32;
+    if sections_scored < sections_total {
+        return anki_proto::gmat::OverallReadiness {
+            sections_scored,
+            sections_total,
+            has_score: false,
+            ..Default::default()
+        };
+    }
+    let sum = |f: fn(&anki_proto::gmat::SectionReadiness) -> f32| -> f32 {
+        scored.iter().map(|s| f(s)).sum()
+    };
+    anki_proto::gmat::OverallReadiness {
+        score: total_score(sum(|s| s.score)),
+        score_low: total_score(sum(|s| s.score_low)),
+        score_high: total_score(sum(|s| s.score_high)),
+        sections_scored,
+        sections_total,
+        has_score: true,
+    }
+}
 
 /// Number of scored questions in a full GMAT Focus section, used to project
 /// total section time from the student's per-item pace.
@@ -851,27 +1071,37 @@ fn percentile(values: &[f32], p: f32) -> f32 {
     }
 }
 
-/// Section-level topics for a card's tags: each tag under `prefix`, truncated
-/// to one level below it (prefix "GMAT", tag "GMAT::Quant::Algebra" ->
-/// "GMAT::Quant"). An empty prefix uses the tag's top-level component.
-/// Deduplicated per card.
-fn topics_for_tags(tags: &[String], prefix: &str) -> Vec<String> {
+/// Hierarchical topics for a card's tags, from one level below `prefix` down to
+/// `max_depth` levels. With prefix "GMAT" and `max_depth` 2, tag
+/// "GMAT::Quant::Algebra" yields ["GMAT::Quant", "GMAT::Quant::Algebra"]; a tag
+/// carrying only "GMAT::Quant" yields ["GMAT::Quant"]. `max_depth` 1 reproduces
+/// the original section-only grouping (so the section score still aggregates
+/// every card, whatever its sub-tag). An empty prefix counts levels from the
+/// tag's top-level component. Deduplicated per card, preserving first-seen
+/// order.
+fn topics_for_tags(tags: &[String], prefix: &str, max_depth: usize) -> Vec<String> {
     let mut topics = Vec::new();
     for tag in tags {
-        let topic = if prefix.is_empty() {
-            tag.split("::")
-                .next()
-                .filter(|s| !s.is_empty())
-                .map(str::to_string)
-        } else if let Some(rest) = tag.strip_prefix(&format!("{prefix}::")) {
-            let seg = rest.split("::").next().unwrap_or("");
-            (!seg.is_empty()).then(|| format!("{prefix}::{seg}"))
+        // Segments below the prefix (or the whole tag when the prefix is empty).
+        let rest = if prefix.is_empty() {
+            Some(tag.as_str())
         } else {
-            None
+            tag.strip_prefix(&format!("{prefix}::"))
         };
-        if let Some(t) = topic {
-            if !topics.contains(&t) {
-                topics.push(t);
+        let Some(rest) = rest else { continue };
+        let segs: Vec<&str> = rest.split("::").filter(|s| !s.is_empty()).collect();
+        for depth in 1..=max_depth {
+            if depth > segs.len() {
+                break;
+            }
+            let joined = segs[..depth].join("::");
+            let topic = if prefix.is_empty() {
+                joined
+            } else {
+                format!("{prefix}::{joined}")
+            };
+            if !topics.contains(&topic) {
+                topics.push(topic);
             }
         }
     }
@@ -939,6 +1169,83 @@ mod tests {
             min_reviews,
             min_cards: 1,
         }
+    }
+
+    fn section(
+        name: &str,
+        score: f32,
+        has_score: bool,
+        coverage_ok: bool,
+    ) -> anki_proto::gmat::SectionReadiness {
+        anki_proto::gmat::SectionReadiness {
+            section: name.to_string(),
+            score,
+            score_low: score - 3.0,
+            score_high: score + 3.0,
+            has_score,
+            coverage_ok,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn total_score_endpoints_and_rounding() {
+        // All 90s -> 805, all 60s -> 205 (formula endpoints).
+        assert_eq!(total_score(270.0), 805);
+        assert_eq!(total_score(180.0), 205);
+        // Midpoint 75+75+75=225 -> exactly 505.
+        assert_eq!(total_score(225.0), 505);
+        // Rounds to the nearest value ending in 5; clamps out-of-range input.
+        assert_eq!(total_score(220.0), 475); // raw 471.67 -> 475
+        assert_eq!(total_score(0.0), 205);
+        assert_eq!(total_score(1000.0), 805);
+    }
+
+    #[test]
+    fn overall_needs_all_three_sections() {
+        let two = vec![
+            section("GMAT::Quant", 80.0, true, true),
+            section("GMAT::Verbal", 75.0, true, true),
+        ];
+        let o = compute_overall(&two, "GMAT");
+        assert!(!o.has_score);
+        assert_eq!(o.sections_scored, 2);
+        assert_eq!(o.sections_total, 3);
+
+        // An unscored third section still doesn't count.
+        let mut three = two.clone();
+        three.push(section("GMAT::DataInsights", 70.0, false, true));
+        assert!(!compute_overall(&three, "GMAT").has_score);
+    }
+
+    #[test]
+    fn overall_abstains_when_a_section_fails_coverage() {
+        // DataInsights is statistically scored (has_score) but its deck skips too
+        // much of the outline (coverage_ok = false) -> it must not count, so the
+        // overall abstains even though all three have has_score.
+        let sections = vec![
+            section("GMAT::Quant", 80.0, true, true),
+            section("GMAT::Verbal", 75.0, true, true),
+            section("GMAT::DataInsights", 70.0, true, false),
+        ];
+        let o = compute_overall(&sections, "GMAT");
+        assert!(!o.has_score);
+        assert_eq!(o.sections_scored, 2);
+    }
+
+    #[test]
+    fn overall_computes_from_all_sections() {
+        let all = vec![
+            section("GMAT::Quant", 80.0, true, true),
+            section("GMAT::Verbal", 75.0, true, true),
+            section("GMAT::DataInsights", 70.0, true, true),
+        ];
+        let o = compute_overall(&all, "GMAT");
+        assert!(o.has_score);
+        assert_eq!(o.score, total_score(225.0));
+        assert_eq!(o.score_low, total_score(225.0 - 9.0));
+        assert_eq!(o.score_high, total_score(225.0 + 9.0));
+        assert!(o.score_low <= o.score && o.score <= o.score_high);
     }
 
     #[test]
@@ -1240,6 +1547,42 @@ mod tests {
             col.storage.get_revlog_entries_for_card(cid).unwrap().len(),
             0,
             "undo removes the graded attempt"
+        );
+    }
+
+    #[test]
+    fn grade_then_undo_leaves_collection_uncorrupted() {
+        // Spec §7a: prove the collection does not corrupt. Record graded attempts
+        // (which write cramming revlog entries), then undo, running Anki's full
+        // database check after each step — it must find zero problems and must not
+        // report corruption (check_database errors on a corrupt db).
+        let mut col = Collection::new();
+        let cid = add_basic_card(&mut col);
+
+        record_graded(&mut col, cid, true, 3_000);
+        record_graded(&mut col, cid, false, 5_000);
+
+        // Undo the most recent attempt and confirm it took effect. (check_database
+        // runs in a no-undo transaction that clears the undo queue, so we exercise
+        // undo *before* checking the database.)
+        col.undo().unwrap();
+        assert_eq!(
+            col.storage.get_revlog_entries_for_card(cid).unwrap().len(),
+            1,
+            "undo removed exactly the last graded attempt"
+        );
+        assert_eq!(
+            col.check_database().unwrap(),
+            crate::dbcheck::CheckDatabaseOutput::default(),
+            "no integrity problems after grade + undo"
+        );
+
+        // And grading can continue afterwards without corrupting anything.
+        record_graded(&mut col, cid, true, 2_000);
+        assert_eq!(
+            col.check_database().unwrap(),
+            crate::dbcheck::CheckDatabaseOutput::default(),
+            "no integrity problems after re-grading post-undo"
         );
     }
 
@@ -1691,6 +2034,95 @@ mod tests {
         assert_eq!(
             res.card_id, cids[2].0,
             "only the un-done card can be served"
+        );
+    }
+
+    #[test]
+    fn topics_for_tags_depth_one_is_section_only() {
+        let tags = vec!["GMAT::Quant::Algebra".to_string()];
+        assert_eq!(topics_for_tags(&tags, "GMAT", 1), vec!["GMAT::Quant"]);
+    }
+
+    #[test]
+    fn topics_for_tags_depth_two_adds_category() {
+        let tags = vec!["GMAT::Quant::Algebra".to_string()];
+        assert_eq!(
+            topics_for_tags(&tags, "GMAT", 2),
+            vec![
+                "GMAT::Quant".to_string(),
+                "GMAT::Quant::Algebra".to_string()
+            ],
+        );
+        // A card tagged only at the section level still yields just the section.
+        let section_only = vec!["GMAT::Verbal".to_string()];
+        assert_eq!(
+            topics_for_tags(&section_only, "GMAT", 2),
+            vec!["GMAT::Verbal"]
+        );
+    }
+
+    #[test]
+    fn recommends_weakest_category_within_section() {
+        let mut col = Collection::new();
+        let nt = mcq_notetype(&mut col);
+        // Two Quant categories, each with enough responses to be trusted
+        // (>= CATEGORY_MIN_RESPONSES).
+        let algebra = add_practice_in_section(&mut col, &nt, "GMAT::Quant::Algebra", 10);
+        let geometry = add_practice_in_section(&mut col, &nt, "GMAT::Quant::Geometry", 10);
+        // Algebra answered wrong (low θ); Geometry answered right (high θ).
+        for c in &algebra {
+            let _ = grade_timed(&mut col, *c, "A", 3_000);
+        }
+        for c in &geometry {
+            let _ = grade_timed(&mut col, *c, "C", 3_000);
+        }
+        let res = col
+            .next_practice_card_impl(pool_req_irt("note:\"GMAT MCQ\"", 1))
+            .unwrap();
+        assert!(!res.exhausted);
+        assert!(
+            algebra.iter().any(|c| c.0 == res.card_id),
+            "weakest category (Quant::Algebra) should win over Quant::Geometry, got {}",
+            res.card_id,
+        );
+    }
+
+    #[test]
+    fn sparse_category_falls_back_to_section() {
+        let mut col = Collection::new();
+        let nt = mcq_notetype(&mut col);
+        // A strong Quant section: a well-answered common category dominates it,
+        // plus a tiny weak-looking category with too few responses to trust.
+        let common = add_practice_in_section(&mut col, &nt, "GMAT::Quant::Common", 15);
+        let rare = add_practice_in_section(&mut col, &nt, "GMAT::Quant::Rare", 3);
+        for c in &common {
+            let _ = grade_timed(&mut col, *c, "C", 3_000); // correct -> high
+                                                           // section θ
+        }
+        for c in &rare {
+            let _ = grade_timed(&mut col, *c, "A", 3_000); // wrong, but only 3
+                                                           // responses
+        }
+        // A genuinely weak, well-measured category in another section.
+        let cr = add_practice_in_section(&mut col, &nt, "GMAT::Verbal::CR", 8);
+        for (i, c) in cr.iter().enumerate() {
+            let chosen = if i < 5 { "A" } else { "C" }; // 5 wrong, 3 correct
+            let _ = grade_timed(&mut col, *c, chosen, 3_000);
+        }
+        let res = col
+            .next_practice_card_impl(pool_req_irt("note:\"GMAT MCQ\"", 1))
+            .unwrap();
+        assert!(!res.exhausted);
+        assert!(
+            cr.iter().any(|c| c.0 == res.card_id),
+            "the well-measured weak category (Verbal::CR) should win, got {}",
+            res.card_id,
+        );
+        // The sparse category must fall back to its strong section, so it is not
+        // chased on noisy evidence.
+        assert!(
+            !rare.iter().any(|c| c.0 == res.card_id),
+            "sparse Quant::Rare must not be recommended over a well-measured weak category",
         );
     }
 }

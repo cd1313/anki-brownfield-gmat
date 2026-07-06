@@ -243,6 +243,13 @@ def show_correct_peer(mw: aqt.AnkiQt) -> None:
             parent=mw,
         )
         return
+    if not gmat.peer_enabled(mw.col):
+        tooltip(
+            "Peer feature is OFF (study-feature ablation). Re-enable it from "
+            "Tools → GMAT: Toggle Peer Feature.",
+            parent=mw,
+        )
+        return
     global _correct_dialog
     _correct_dialog = CorrectPeerDialog(mw)
     _correct_dialog.show()

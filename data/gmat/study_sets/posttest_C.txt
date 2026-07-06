@@ -1,0 +1,60 @@
+#separator:Comma
+#html:true
+#notetype:GMAT MCQ
+#deck:GMAT::PostTest::C
+#tags column:9
+"Current age of Bruce and Tomy are in the ratio of 5 : 4 respectively. Three years hence, the ratio of their ages will become 11 : 9 respectively. What is Tomy 's present age in years?",18 years,20 years,24 years,25 years,26 years,C,"Let the present ages of Bruce and Tomy be 5x years and 4x years respectively.
+Then,	5x + 3	=	11
+4x + 3	9
+9(5x + 3) = 11(4x + 3)
+45x + 27 = 44x + 33
+45x - 44x = 33 - 27
+x = 6.
+Anand's present age = 4x = 24 years.
+C",GMAT::PostTest::C
+A shopkeeper sells 20% of his stock at 20% profit ans sells the remaining at a loss of 10%. He incurred an overall loss of Rs. 500. Find the total worth of the stock?,13500,12000,12500,15000,15500,C,"Let the total worth of the stock be Rs. x.
+The SP of 20% of the stock = 1/5 * x * 6/5 = 6x/25
+The SP of 80% of the stock = 4/5 * x * 0.9 = 24x/25
+Total SP = 6x/25 + 18x/25 = 49x/50
+Overall loss = x - 24x/50 = x/25
+x/25 = 500 => x = 12500
+Answer:C",GMAT::PostTest::C
+"There are 5 chess amateurs playing in Villa's chess club tournament. If each chess amateur plays with exactly 8 other amateurs, what is the total number of chess games possible to be played in the tournament?",10,20,40,60,120,B,"Method 2:
+Each person is one participant of 4 games. So there are in all 8*5 =40 instances of one participant games. But each game has 2 participants so total number of games = 40/2 = 20
+B",GMAT::PostTest::C
+The average of 7 numbers is 25. If each number be multiplied by 5. Find the average of new set of numbers?,A)110,B)122,C)120,D)125,E)145,D,"Explanation:
+Average of new numbers = 25 * 5 = 125
+Answer: Option D",GMAT::PostTest::C
+A printer numbers the pages of a book starting with 1 and uses 3189 digits in all. How many pages does the book have ?,1000,1074,1075,1080,1089,B,"Explanation:
+No. of digits in 1-digit page nos. = 1x9 = 9.
+No. of digits in 2-digit page nos. = 2 x 90 = 180.
+No. of digits in 3-digit page nos. = 3 x 900 = 2700.
+No. of digits in 4-digit page nos. = 3189 - (9 + 180 + 2700) = 3189 - 2889 = 300.
+Therefore No. of pages with 4-digit page nos. = (300/4) = 75.
+Hence, total number of pages = (999 + 75) = 1074.
+Answer: B",GMAT::PostTest::C
+"A certain computer manufacturing firm last year produced 80 percent of its computers using parts made by its subsidiary company. If the remaining 10,800 computers were produced using parts purchased from another parts manufacturer, how many computers were produced by the computer manufacturing firm altogether?","54,000",64000,62000,60000,68000,A,"80% parts used of subsidary company, so 20% parts used of other companies.
+Now, 20% parts = 10,800 computers
+So, 1% parts = 10,800/20
+Or, 100% parts = 54,000 computers.
+Hence answer is (A)",GMAT::PostTest::C
+What is the rate percent when the simple interest on Rs.720 amount to Rs.180 in 4 Years?,6.25,7.25,8.25,9.25,10.25,A,"180 = (720*4*R)/100
+R = 6.25%
+Answer: A",GMAT::PostTest::C
+"Nicky and Cristina are running a race. Since Cristina is faster than Nicky, she gives him a 54 meter head start. If Cristina runs at a pace of 5 meters per second and Nicky runs at a pace of only 3 meters per second, how many seconds will Nicky have run before Cristina catches up to him?",15 seconds,18 seconds,25 seconds,27 seconds,45 seconds,D,"used pluging in method
+say t is the time for cristina to catch up with Nicky, the equation will be as under:
+for Nicky=N=3*t+54
+for Cristina=C=5*t
+@t=27, N=135 C=135 right answer
+ans:D",GMAT::PostTest::C
+"A doctor prescribed 18 cubic centimeters of a certain drug to a patient whose body weight was 120 pounds. If the typical dosage is 2 cubic centimeters per 10 pounds of the body weight, by what percent was the prescribed dosage lesser than the typical dosage?",8%,-37.5%,11%,12.5%,14.8%,B,"Typical dosage per 10 pound of the body weight = 2 c.c
+Typical dosage per 120 pound of the body weight = 2 *(120/10)
+= 2 * 12
+= 24 c.c
+Dosage prescribed by doctor for 120 pound patient = 18 c.c
+% prescribed dosage greater than the typical dosage = (18-24/16) *100%
+=(-6/16) *100%
+= -37.5%
+Answer B",GMAT::PostTest::C
+"From a well shuffled deck of cards, what would be the probability that you would draw a two or a spade?",4 in 12,4 in 10,4 in 13,4 in 8,4 in 16,C,"P(C)+P(2)-P(Cn2)
+P(Cu2)=13/52 + 4/52 - 1/52 = 4/13",GMAT::PostTest::C

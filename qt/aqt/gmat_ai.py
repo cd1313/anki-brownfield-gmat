@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -28,6 +29,33 @@ from pathlib import Path
 
 _DEFAULT_MODEL = "gpt-4o-mini"
 _OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+
+# --- Firebase-backed AI proxy ------------------------------------------------
+#
+# So users get AI with NO key of their own: the app signs in as an anonymous
+# Firebase user and calls our Cloud Function, which holds the real OpenAI key
+# server-side. A user who sets their own OPENAI_API_KEY bypasses the proxy and
+# calls OpenAI directly (BYOK). All values below are public client identifiers
+# (safe to ship) or test overrides; the OpenAI key never lives here.
+#
+# After deploying the Firebase project, bake the real project's Web API key and
+# function URL into these two defaults (they're overridable via env for
+# testing/self-hosting). Until both are set, `_proxy_configured()` is False and
+# behaviour is unchanged (BYOK only).
+_FIREBASE_API_KEY = os.environ.get(
+    "GMAT_FIREBASE_API_KEY", "AIzaSyCIsE71A1rZZlIk2ljTEklw3QjFjLWshUI"
+)
+_PROXY_URL = os.environ.get(
+    "GMAT_AI_PROXY_URL", "https://gmataichat-pdxhfrwlqq-uc.a.run.app"
+)
+# Google Identity Toolkit / Secure Token endpoints (overridable to point at the
+# Firebase Auth emulator during testing).
+_IDENTITY_URL = os.environ.get(
+    "GMAT_IDENTITY_URL", "https://identitytoolkit.googleapis.com/v1"
+)
+_SECURETOKEN_URL = os.environ.get(
+    "GMAT_SECURETOKEN_URL", "https://securetoken.googleapis.com/v1"
+)
 
 _SYSTEM_PROMPT = (
     "You grade a student's typed recall of a flashcard term AND choose the Anki "
@@ -125,10 +153,149 @@ def model() -> str:
     return os.environ.get("GMAT_AI_MODEL") or _DEFAULT_MODEL
 
 
+def _proxy_configured() -> bool:
+    """True when the Firebase proxy is wired up (deployed URL + Web API key)."""
+    return bool(_PROXY_URL and _FIREBASE_API_KEY)
+
+
 def ai_available() -> bool:
-    """True when a key is present. (A per-collection enable toggle is checked
-    separately by the caller via ``col.conf``.)"""
-    return bool(api_key())
+    """True when AI can run: either the user set their own OpenAI key, or the
+    Firebase proxy is configured (so it works out of the box, no key needed). A
+    per-collection enable toggle is checked separately by the caller."""
+    return bool(api_key()) or _proxy_configured()
+
+
+# --- Anonymous Firebase auth for the proxy (Identity Toolkit REST, no SDK) ----
+
+_token_state: dict = {"id_token": None, "refresh_token": None, "expiry": 0.0}
+
+
+def _token_file() -> Path | None:
+    """Where to persist the refresh token so a user keeps a stable anonymous
+    identity (and thus a stable daily quota) across launches. Best-effort."""
+    try:
+        import aqt
+
+        mw = aqt.mw
+        if mw and mw.pm:
+            return Path(mw.pm.profileFolder()) / "gmat_firebase.json"
+    except Exception:
+        pass
+    return None
+
+
+def _load_refresh_token() -> str | None:
+    if _token_state["refresh_token"]:
+        return _token_state["refresh_token"]
+    f = _token_file()
+    if f and f.is_file():
+        try:
+            rt = json.loads(f.read_text()).get("refresh_token")
+            _token_state["refresh_token"] = rt
+            return rt
+        except (OSError, ValueError):
+            return None
+    return None
+
+
+def _save_refresh_token(rt: str) -> None:
+    _token_state["refresh_token"] = rt
+    f = _token_file()
+    if f:
+        try:
+            f.write_text(json.dumps({"refresh_token": rt}))
+        except OSError:
+            pass
+
+
+def _post_json(url: str, obj: dict, timeout: float = 8.0) -> dict | None:
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(obj).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return None
+
+
+def _anon_signup() -> str | None:
+    data = _post_json(
+        f"{_IDENTITY_URL}/accounts:signUp?key={_FIREBASE_API_KEY}",
+        {"returnSecureToken": True},
+    )
+    if not data or "idToken" not in data:
+        return None
+    _token_state["id_token"] = data["idToken"]
+    _token_state["expiry"] = time.time() + int(data.get("expiresIn", 3600))
+    if data.get("refreshToken"):
+        _save_refresh_token(data["refreshToken"])
+    return data["idToken"]
+
+
+def _refresh(rt: str) -> str | None:
+    data = _post_json(
+        f"{_SECURETOKEN_URL}/token?key={_FIREBASE_API_KEY}",
+        {"grant_type": "refresh_token", "refresh_token": rt},
+    )
+    if not data or "id_token" not in data:
+        return None
+    _token_state["id_token"] = data["id_token"]
+    _token_state["expiry"] = time.time() + int(data.get("expires_in", 3600))
+    if data.get("refresh_token"):
+        _save_refresh_token(data["refresh_token"])
+    return data["id_token"]
+
+
+def _firebase_id_token() -> str | None:
+    """A valid anonymous Firebase ID token, minting/refreshing as needed."""
+    if _token_state["id_token"] and time.time() < _token_state["expiry"] - 60:
+        return _token_state["id_token"]
+    rt = _load_refresh_token()
+    if rt:
+        tok = _refresh(rt)
+        if tok:
+            return tok
+    return _anon_signup()
+
+
+def _post_chat(body: dict, timeout: float) -> dict | None:
+    """Send an OpenAI chat-completions ``body`` and return the parsed JSON of the
+    assistant message, or ``None`` on any failure. Uses the user's own key when
+    set (direct to OpenAI, BYOK); otherwise routes through the Firebase proxy
+    (anonymous auth, key held server-side)."""
+    key = api_key()
+    if key:
+        url = _OPENAI_URL
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+    elif _proxy_configured():
+        token = _firebase_id_token()
+        if not token:
+            return None
+        url = _PROXY_URL
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "X-Gmat-Platform": "desktop",
+        }
+    else:
+        return None
+    req = urllib.request.Request(
+        url, data=json.dumps(body).encode("utf-8"), headers=headers
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        content = payload["choices"][0]["message"]["content"]
+        parsed = json.loads(content)
+        return parsed if isinstance(parsed, dict) else None
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError):
+        return None
 
 
 def grade(
@@ -139,8 +306,7 @@ def grade(
 ) -> GradeResult | None:
     """Grade ``answer`` against ``expected``. Returns ``None`` on any failure so
     the caller can fall back to self-rating."""
-    key = api_key()
-    if not key:
+    if not ai_available():
         return None
     answer = (answer or "").strip()
     if not answer:
@@ -154,7 +320,7 @@ def grade(
         f"Student's answer:\n{answer}\n\n"
         "Grade the student's answer."
     )
-    body = json.dumps(
+    parsed = _post_chat(
         {
             "model": model(),
             "messages": [
@@ -163,22 +329,10 @@ def grade(
             ],
             "temperature": 0,
             "response_format": {"type": "json_object"},
-        }
-    ).encode("utf-8")
-    req = urllib.request.Request(
-        _OPENAI_URL,
-        data=body,
-        headers={
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
         },
+        timeout,
     )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-        content = payload["choices"][0]["message"]["content"]
-        parsed = json.loads(content)
-    except (urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError):
+    if parsed is None:
         return None
 
     verdict = str(parsed.get("verdict", "")).strip().lower()
@@ -209,11 +363,8 @@ def _chat_json(
     system_prompt: str, user_prompt: str, timeout: float = 12.0
 ) -> dict | None:
     """Shared JSON-mode chat call. Returns the parsed object, or None on any
-    failure (no key, network error, bad JSON)."""
-    key = api_key()
-    if not key:
-        return None
-    body = json.dumps(
+    failure (no key/proxy, network error, bad JSON)."""
+    return _post_chat(
         {
             "model": model(),
             "messages": [
@@ -222,21 +373,9 @@ def _chat_json(
             ],
             "temperature": 0,
             "response_format": {"type": "json_object"},
-        }
-    ).encode("utf-8")
-    req = urllib.request.Request(
-        _OPENAI_URL,
-        data=body,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        },
+        timeout,
     )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-        content = payload["choices"][0]["message"]["content"]
-        parsed = json.loads(content)
-        return parsed if isinstance(parsed, dict) else None
-    except (urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError):
-        return None
 
 
 def _format_options(options: list[tuple[str, str]]) -> str:

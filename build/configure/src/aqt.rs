@@ -113,8 +113,20 @@ fn build_data_folder(build: &mut Build) -> Result<()> {
     build_js(build)?;
     build_pages(build)?;
     build_icons(build)?;
+    build_gmat(build)?;
     copy_sveltekit(build)?;
     Ok(())
+}
+
+/// The built-in GMAT deck, imported once on first run (see aqt/gmat.py).
+fn build_gmat(build: &mut Build) -> Result<()> {
+    build.add_action(
+        "qt:aqt:data:gmat",
+        CopyFile {
+            input: "qt/aqt/data/gmat/gmat.apkg".into(),
+            output: "qt/_aqt/data/gmat/gmat.apkg",
+        },
+    )
 }
 
 fn copy_sveltekit(build: &mut Build) -> Result<()> {

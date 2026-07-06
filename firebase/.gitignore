@@ -1,0 +1,7 @@
+functions/node_modules/
+functions/lib/
+*.log
+.firebase/
+# local secrets used only for emulator testing
+functions/.secret.local
+.runtimeconfig.json

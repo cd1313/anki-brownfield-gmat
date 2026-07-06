@@ -1,0 +1,69 @@
+#separator:Comma
+#html:true
+#notetype:GMAT MCQ
+#deck:GMAT::PostTest::A
+#tags column:9
+A batch of widgets costs p + 1 dollars for a company to produce and each batch sells for p(5 – p) dollars. For which of the following values of p does the company make a profit?,3,4,5,6,7,A,"to make profit, selling price should be greater than cost price
+p(5-p) - p-1 >0
+=> p^2-4*p+1<0
+hence p=3
+A",GMAT::PostTest::A
+"In doing a division of a question with zero remainder,a candidate
+took 12 as divisor instead of 21.The quotient obtained by him was 35.
+The correct quotient is?",12,21,20,35,10,C,"Dividend=12*35=420.
+Now dividend =420 and divisor =21.
+Therefore correct quotient =420/21=20.
+ANSWER C 20",GMAT::PostTest::A
+Albert father was 48 years of age when she was born while her mother was 46 years old when her brother 2 years younger to her was born. What is the difference between the ages of her parents?,2,4,6,8,10,B,"Mother's age when Albert's brother was born = 46years
+Father's age when Albert's brother was born = 48+2 = 50years
+Required difference = 50-46 = 4 years
+Answer is B",GMAT::PostTest::A
+"A team P of 20 engineers can complete work or task in 32 days. Another team Q of 16 engineers can complete same task in 30 days.Then the ratio of working capacity of 1 member of P to the 1 member of Q is
+a. 3 : 2",22,34,77,29,21,B,"Explanation:
+Let the capacity of an engineer in P = x units, and in Q = y units.
+Working capacity of P = x × 32 × 20
+Working capacity of Q = y × 16 × 30
+As the total work is same, we equate the above equations.
+⇒ x × 32 × 20 = y × 16 × 30
+⇒ xy=16×3032×20=34
+Answer: B",GMAT::PostTest::A
+"On a map, 2.5 inches represent 40 miles. How many miles approximately is the distance if you measured 155 centimeters assuming that 1-inch is 2.54 centimeters?",990.4,970,972,976.4,975,D,"1 inch = 2.54 cm
+2.5 inch = 2.54 * 2.5 cm
+6.35 cm = 40 miles
+155 cms = 40/6.35*155= 976.4 miles
+Answer : D",GMAT::PostTest::A
+"A cycle is bought for Rs.900 and sold for Rs.1140, find the gain percent?",11,27,99,77,18,B,"900 ---- 240
+100 ---- ? => 27%
+Answer: B",GMAT::PostTest::A
+"A packet of 10 electronic components is known to include 3 defectives. If 4 components are randomly chosen and tested, what is the probability of finding among them not more than one defective component.",0.6517,0.868,0.4483,None of these,Cannot be determined,A,"Explanation :
+Here, the trials are independent , since the probability of defective component in any trial is not affected by the occurrence or non-occurrence of a defective component in any other trial. So, it is a case of binomial distribution.
+No. of trials = n = 4.
+Occurrence of a defective component is a success.
+Then, the probability of success = p = 3/10.
+the probability of failure = 1- p = 7/10.
+Components not more than one defective one means x ≤ 1 i.e x = 0.
+Using the formula,
+P(x) = ncxPx(1-P)n-x.
+Since,
+=> P(x ≤ 1) = P(x = 0) or P(x = 1)
+= P(0) + P(1) .
+= 4c0(3/10)0 x (7/10)4 + 4c1(3/10)1x (7/10)3 .
+= (7/10)4 + 4 x (3/10) x (7/10)3.
+= 0.6517
+Hence, the required probability is 0.6517.
+Answer : A",GMAT::PostTest::A
+"What is the CP of Rs 100 stock at 5 discount, with 1/5% brokerage?",99.6,95.2,97.5,98.25,None of these,B,"Explanation:
+Use the formula,
+CP= 100 â€“ discount + brokerage%
+CP= 100-5+1/5
+95.2
+Thus the CP is Rs 95.2.
+ANSWER B",GMAT::PostTest::A
+A committee of 6 is chosen from 8 men and 5 women so as to contain at least 2 men and 3 women. How many different committees could be formed?,635,700,1404,2620,3510,B,"The only cases possible are :
+1. 2 men and 4 women : 8C2 * 5C4 = 140
+2. 3 men and 3 women: 8C3*5C3 = 560
+Rest of the cases will either have 1 or 0 men (not allowed) or will have 1 or 2 or 0 women (not allowed)
+Total possible combinations = 140+560 = 700. Thus B is the correct answer.",GMAT::PostTest::A
+10^(655) Ã· 10^(652) = ?,1,100,10000,100000,1000,E,"10^(655) Ã· 10^(652) = 10^ (655-652) = 10^3
+= 1000
+Answer : E",GMAT::PostTest::A

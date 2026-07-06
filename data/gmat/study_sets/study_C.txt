@@ -1,0 +1,109 @@
+#separator:Comma
+#html:true
+#notetype:GMAT MCQ
+#deck:GMAT::Study::C
+#tags column:9
+A 180m long train is running at 72 kmph.If it crossed the platform in 20 sec.then find the platform length?,220m,110m,230m,100m,90m,A,"Length=speed*time
+Length=72km/hr*time
+Length=[72*(5/18)]*20 {(ie)(x)km/hr)}
+=x*(5/18)
+=20*20
+Length=400m
+Length of platform=Length-Length of the train
+Length of platform=400-180
+Length of platform=220m
+Option A",GMAT::Quant GMAT::Quant::StudyC
+Find the maximum value of n such that 50! is perfectly divisible by 2520^n,7,8,9,6,5,B,"2520 = 2^3*3^2*5*7
+Here, 7 is the highest prime,so find the no. of 7's in 50! only
+no. of 7's in 50! = [50/7] + [50/7^2] = 7+1 = 8
+ANSWER:B",GMAT::Quant GMAT::Quant::StudyC
+"Denise is trying to open a safe whose combination she does not know. IF the safe has 4000 possible combinations,and she can try 50 different possibilities,what is the probability that she does not pick the one correct combination.",1,0.9875,0.8875,3/160,0,B,"If Denise does not pick the correct combination in first 50 try, then the correct combination is one of remaining 3950. So Probability = 3950/4000 = 0.9875.
+answer is B",GMAT::Quant GMAT::Quant::StudyC
+"Jansi went out for shopping. She had in her handbag approximately Rs. 15/- in one rupee notes and 20 p. coins. When she returned she had as many one rupee notes as she originally had and as many 20 p. coins as she originally had one rupee notes. She actually came back with about one-third of what she had started out with.
+How much did she spend and exactly how much did she have with her when she started out ?",9.6,10.6,11.0,9.4,8.1,A,"A
+9.60
+Let us assume that originally Jansi had X rupees and Y 20 paise coins. Going shopping she had (100X + 20 Y) paise.
+She returned with only (100 Y + 20 X) paise.
+This last sum, as we know, is one-third of the original and therefore
+3(100 Y + 20 X) = 100 X + 20 Y Simplifying we have X = 7 Y
+If Y is 1 thenX is 7. Assuming this so Jansi had 7.20 rupees when she set out for shopping.
+This is wrong because Jansi actually had about 15 rupees.
+Let us see now what we get if Y = 2. Then X = 14. The original sum was 14.40 rupees which accords with the condition of the problem.
+If we assume that Y = 3 then the sum will be too big — 21.60 rupees.
+Therefore the only suitable answer is 14.40 rupees.
+After shopping Jansi had 2 one rupee notes and 14 twenty Paise coins.
+This is actually l/3rd of the original sum 1,440:3 = 480. Jansi's purchases, therefore, cost 14.40 — 4.80 = Rs 9.60",GMAT::Quant GMAT::Quant::StudyC
+"If the volume of a cube is x^3 cubic units, what is the number of square units in the surface area of the cube?",x^2,x^3,x^6,6x^2,6x^3,D,"The question basically asks you to calculate the surface area of the cube.
+Volume of the cube = x^3
+This means each side of the cube = x
+Hence area of each side = x^2
+Total surfaces in a cube = 6
+Total surface area = 6*x2
+Correct Option: D",GMAT::Quant GMAT::Quant::StudyC
+"g(a) is defined as the product of all even integers k such that 0 < k ≤ x. For example, g(14) = 2 × 4 × 6 × 8 × 10 × 12 × 14. If g(y) is divisible by 4^11, what is the smallest possible value for a?",22,24,28,32,44,B,"g(a)=4^11=2^22. So we have to find a product with atleast 22 2's in it.
+in option 1 22 the total no of 2's = [22/2] + [22/4] +[22/8] +[22/16] = 11+5+2+1 = 19
+in option 2 24 the total no of 2's = [24/2] + [24/4] +[24/8] +[24/16] = 12+6+3+1 = 22 . Hence B",GMAT::Quant GMAT::Quant::StudyC
+In how many years does a sum of Rs. 4500 yield a simple interest of Rs. 16000 at 15% p.a.?,23.7 years,24.7 years,25.7 years,26.7 years,27.7 years,A,"T = (100 * 16000)/(15 * 4500) = 23.7 years
+ANSWER:A",GMAT::Quant GMAT::Quant::StudyC
+"The output of a factory was increased by 10% to keep up with rising demand. To handle the holiday rush, this new output was increased by 10%. By approximately what percent would the output now have to be decreased in order to restore the original output?",20%,24%,30%,32%,17%,E,"The original output increases by 10% and then 10%.
+Total % change = a + b + ab/100
+Total % change = 10 + 10 + 10*10/100 = 21%
+Now, you want to change it to 0, so,
+0 = 21 + x + 21x/100
+x = -21(100)/121 = 17% approximately
+Answer is E",GMAT::Quant GMAT::Quant::StudyC
+"David and Rachel are getting married. The extended family wants to have its picture taken, but David's father is unwilling to stand next to Rachel's mother. How many options does the photographer have to arrange the 11 family members in a row for the picture?",12!,10×9!,9×10!,11!/2!,11!,C,"The number of ways to arrange 11 people is 11!
+We need to subtract the arrangements when these two people are together.
+Let's think of these two people as a single unit so there are 10 units.
+The number of ways to arrange 10 units is 10!
+We need to multiply this by 2 since these two people could switch places.
+The total number of valid arrangements is 11! - 2*10! = 10!*(11-2) = 9x10!
+The answer is C.",GMAT::Quant GMAT::Quant::StudyC
+"Tom can hit a target 3times in 6shots, Karan can hit the target 2times in 6 shots & Ashwini can hit 4 times in 4 shots. What is the probability that at least 2 shots hit the target ?",2/5,3/7,2/3,2/5,3/11,C,"Ashwini hits the target definitely, hence required probability that atleast 2 shots hit the target is given by
+Karan hits tha target and Raja not hit the target.
+or
+Karan does not hit the target and Raja hits the target.
+or.
+Karan hits the target and Raja hits the target
+= 2/6 x 3/6 + 4/6 x 3/6 + 2/6 x 3/6
+= 24/36 = 2/3
+C",GMAT::Quant GMAT::Quant::StudyC
+"What is the median from the below series
+5, 8, 11, 6, 10, 4, 18, 16, 13, 12 and 14",11,5,12,13,10,A,"Ordering the data from least to greatest, we get:
+4, 5, 6, 8, 10, 11, 12, 13, 14, 16, 18
+The median number was 11. (Five numbers were higher than 11 and five were lower.)
+A",GMAT::Quant GMAT::Quant::StudyC
+A sum of Rs.1480 is divided into 13 students so that each boy gets Rs.120 while each girl gets Rs.100. Find the number of boys and number of girls,"8B, 5G","5B, 8G","4B, 9G","9B, 4G","9B, 5G",D,"120B+100G=1480-----i
+B+G=13-------ii
+from i
+100B+20B+100G=1480
+100(B+G)+20B=1480
+100(13)+20B=1480
+By simplifing we get
+B=9;G=4
+ANSWER:D",GMAT::Quant GMAT::Quant::StudyC
+19.19/2000 is equal to:,1.01252633,0.01262533,0.12526333,0.012793333,0.12725333,D,"19.19/2000 = 2525/200000
+= 0.012793333
+ANSWER:D",GMAT::Quant GMAT::Quant::StudyC
+Laxmi and Prasanna set on a journey. Laxmi moves northwards at a speed of 40kmph and Prasanna moves southward at a speed of 38 kmph. How far will be Prasanna from Laxmi after 60 minutes ?,11,50,78,27,18,C,"Explanation:
+We know 60 min = 1 hr
+Total northward Laxmi's distance = 40kmph x 1hr = 40 km
+Total southward Prasanna's distance = 38kmph x 1hr = 38 km
+Total distance between Prasanna and Laxmi is = 40 + 38 = 78 km.
+Answer: C",GMAT::Quant GMAT::Quant::StudyC
+"A problem is given to 3 students A, B and C whose chances of solving it are 1/2, 1/3 and 1/4 respectively. What is the chance that the problem is solved.",2/3,1/2,1/4,3/4,3/7,D,"Explanation :
+P(A) = 1/2, P(~A) = 1 - (1/2) = 1/2. [ Prob. of not solving A ]
+P(B) = 1/3, P(~B) = 1 - (1/3) = 2/3. [ Prob. of not solving B ]
+P(C) = 1/4, P(~C) = 1 - (1/4) = 3/4. [ Prob. of not solving C ]
+The problem is solved means atleast one of A,B and C will solve the problem.
+Whenever 'at least one' is present it is easier to do the problem by using the complement of the event (opposite of the event i.e problem not solved )
+P (problem is not solved)
+= P(~A~B~C)
+= P(~A) x P(~B) x P(~C).
+= (1/2) x (2/3) x (3/4).
+= 1/4.
+P (problem is solved i.e atleast one solves)
+= 1 - P(~A~B~C).
+= 1 - (1/4).
+= 3/4.
+Answer : D",GMAT::Quant GMAT::Quant::StudyC

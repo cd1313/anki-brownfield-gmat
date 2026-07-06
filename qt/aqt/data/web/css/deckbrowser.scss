@@ -386,6 +386,56 @@ tr:hover:not(.top-level-drag-row) {
     }
 }
 
+.gmat-taghelp {
+    max-width: 40em;
+    margin: 1.2em auto 0;
+    text-align: start;
+    background: color(canvas-inset);
+    border: 1px solid color(border-subtle);
+    border-radius: prop(border-radius);
+    padding: 0.9em 1.1em;
+    font-size: 0.78em;
+    line-height: 1.5;
+    color: color(fg-subtle);
+
+    p {
+        margin: 0.5em 0;
+    }
+
+    code {
+        background: color(border-subtle);
+        border-radius: 4px;
+        padding: 0.05em 0.35em;
+        font-size: 0.95em;
+        color: color(fg);
+    }
+}
+
+.gmat-taghelp-title {
+    font-weight: 700;
+    font-size: 1.05em;
+    color: color(fg);
+    margin-bottom: 0.2em;
+}
+
+.gmat-taglist {
+    list-style: none;
+    padding: 0;
+    margin: 0.6em 0;
+
+    li {
+        margin: 0.5em 0;
+        line-height: 1.7;
+    }
+}
+
+.gmat-tagsec {
+    display: inline-block;
+    min-width: 8em;
+    font-weight: 700;
+    color: color(accent-card);
+}
+
 /* ---------------- Per-deck progress bar ---------------- */
 .deck-progress {
     display: flex;

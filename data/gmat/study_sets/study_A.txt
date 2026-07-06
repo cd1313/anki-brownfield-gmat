@@ -1,0 +1,87 @@
+#separator:Comma
+#html:true
+#notetype:GMAT MCQ
+#deck:GMAT::Study::A
+#tags column:9
+The average of 25 results is 19. The average of first 12 of those is 14 and the average of last 12 is 17. What is the 13th result?,74,75,103,78,45,C,"Solution: Sum of 1st 12 results = 12*14
+Sum of last 12 results = 12*17
+13th result = x (let)
+Now,
+12*14+12*17+x = 25*19
+Or, x = 103.
+Answer: Option C",GMAT::Quant GMAT::Quant::StudyA
+"Rs.200 contained in a box consists of one rupee, 50 paisa and 25 paisa coins in the ratio 4:5:6. What is the number of 25 paisa coins?",388,266,120,150,267,D,"4x 5x 6x
+100 50 25
+400x + 250x + 150x = 20000
+x = 25
+6x = 150
+Answer: D",GMAT::Quant GMAT::Quant::StudyA
+Q is not equal to zero and k = (Q x n - s)/2 find n?,(2 x k + s)/Q,(2 x s x k)/Q,(2 x k - s)/Q,(2 x k + s x Q)/Q,(k + s)/Q,A,"k = (Q x n - s)/2
+=> Q x n - s = 2 x k
+=> Q x n = 2 x k + s
+=> n = (2 x k + s)/Q
+ANSWER:A",GMAT::Quant GMAT::Quant::StudyA
+"Amit and Ian paint a wall in alternating shifts. First Amit paints alone, then Ian paints alone, then Amit paints alone, etc. During each of his shifts, Amit paints 1/2 of the remaining unpainted area of the wall, while Ian paints 1/3 of the remaining unpainted area of the wall during each of his shifts. If Amit goes first, what fraction of the wall's area will remain unpainted after Amit has completed his 7th shift?",1/27,1/54,1/81,1/162,1/1458,E,"Fraction of area unpainted after FIRST shift of Amit = 1-(1/2) = 1/2
+Fraction of area unpainted after FIRST shift of Ian = (1/2)-(1/3)(1/2) = (2/3)(1/2)
+Fraction of area unpainted after SECOND shift of Amit = (1/2)(2/3)(1/2)
+Fraction of area unpainted after SECOND shift of Ian = (2/3)(1/2)(2/3)(1/2)
+Fraction of area unpainted after THIRD shift of Amit = (1/2)(2/3)(1/2)(2/3)(1/2)
+Fraction of area unpainted after THIRD shift of Ian = (2/3)(1/2)(2/3)(1/2)(2/3)(1/2)
+Fraction of area unpainted after FORTH shift of Amit = (1/2)(2/3)(1/2)(2/3)(1/2)(2/3)(1/2)
+Fraction of area unpainted after FORTH shift of Ian = (2/3)(1/2)(2/3)(1/2)(2/3)(1/2)(2/3)(1/2)
+Fraction of area unpainted after FIFTH shift of Amit = (1/2)(2/3)(1/2)(2/3)(1/2)(2/3)(1/2)(2/3)(1/2)
+Fraction of area unpainted after FIFTH shift of Ian = (2/3)(1/2)(2/3)(1/2)(2/3)(1/2)(2/3)(1/2)(2/3)(1/2)
+Fraction of area unpainted after SIXTH shift of Amit = (1/2)(2/3)(1/2)(2/3)(1/2)(2/3)(1/2)(2/3)(1/2)(2/3)(1/2)
+Fraction of area unpainted after SIXTH shift of Ian = (2/3)(1/2)(2/3)(1/2)(2/3)(1/2)(2/3)(1/2)(2/3)(1/2)(2/3)(1/2)
+Fraction of area unpainted after SEVENTH shift of Amit = (1/2)(2/3)(1/2)(2/3)(1/2)(2/3)(1/2)(2/3)(1/2)(2/3)(1/2)(2/3)(1/2)=1458
+Answer: option E",GMAT::Quant GMAT::Quant::StudyA
+"The ratio between the speeds of two trains is 7 : 8. If the second train runs 400 km in 4 hours, then the speed of the first train is?",70 km/hr,75 km/hr,84 km/hr,87.5 km/hr,90.5 km/hr,D,"Let the speed of two trains be 7x and 8x km/hr.
+Then, 8x = [ 400/4] = 100
+x = [100/8] = 12.5
+Speed of first train = (7 x 12.5) km/hr = 87.5 km/hr.
+Answer is D",GMAT::Quant GMAT::Quant::StudyA
+"How should a profit of Rs.500 be divided into two partners, if one of them invested Rs.6000 for 5 months and other invested Rs.5000 for 4 months? (in Rs.)","1000,5000","3000,2000","500,400","2000,3000","300,200",E,"ratio come as 3:2, pofit become as 300,200.
+ANSWER:E",GMAT::Quant GMAT::Quant::StudyA
+A boatman can row 3 km against the stream in 20 minutes and return in 15 minutes. Find the rate of current ?,7/2 kmph,8/2 kmph,5/2 kmph,1.5 kmph,2/2 kmph,D,"Explanation:
+Speed in upstream = Distance / Time = 3 x 60/20 = 9 km/hr.
+Speed in downstream = 3 x 60/15 = 12 km/hr
+Rate of current = (12-9)/2 = 1.5 km/hr.
+Answer: D",GMAT::Quant GMAT::Quant::StudyA
+"A person walks from one end to the other of a 90-meter long moving walkway at a constant rate in 30 seconds, assisted by the walkway. When this person reaches the end, they reverse direction and continue walking with the same speed, but this time it takes 120 seconds because the person is traveling against the direction of the moving walkway. If the walkway were to stop moving, how many seconds would it take this person to walk from one end of the walkway to the other?",36,42,48,54,60,C,"Let v be the speed of the person and let x be the speed of the walkway.
+30(v+x)=90 then 120(v+x)=360
+120(v-x)=90
+When we add the two equations:
+240v=450
+v=15/8
+time = 90 / (15/8) = 48 seconds
+The answer is C.",GMAT::Quant GMAT::Quant::StudyA
+"sonam has 19 penciles,sania has 29 penciles. Totally how many penciles they have in all?",48,50,30,60,20,A,19+29=48. Answer is A,GMAT::Quant GMAT::Quant::StudyA
+"Company S produces two kinds of stereos: basic and deluxe. Of the stereos produced by Company S last month, 2/3 were basic and the rest were deluxe. If it takes 9/5 as many hours to produce a deluxe stereo as it does to produce a basic stereo, then the number of hours it took to produce the deluxe stereos last month was what fraction of the total number of hours it took to produce all the stereos?",7/17,14/31,7/15,17/35,9/19,E,"# of basic stereos was 2/3 of total and # of deluxe stereos was 1/3 of total, let's assume total=15, then Basic=10 and Deluxe=5.
+Now, if time needed to produce one Deluxe stereo is 1 unit than time needed to produce one Basic stereo would be 9/5 units. Total time for Basic would be 10*1=10 and total time for Deluxe would be 5*9/5=9 --> total time for both of them would be 10+9=19 --> deluxe/total=9/19.
+Answer: E.",GMAT::Quant GMAT::Quant::StudyA
+"In recent Malta elections, in a particular constituency, 100,000 votes were cast and each vote was cast for
+either Candidate A or Candidate B. If candidate A has won by 500 votes, what percent of the 100,000 votes
+were cast for Candidate A?",50.05%,50.25%,50.5%,51%,52.5%,B,"Difference of 500 means A got 250 votes above the midway...
+So A got 100,000/2 +250=50250...
+% = 50250*100/100000=50.25%
+ANSWER:B",GMAT::Quant GMAT::Quant::StudyA
+"Real-estate salesman Z is selling a house at a 20 percent discount from its retail price. Real-estate salesman X vows to match this price, and then offers an additional 10 percent discount. Real-estate salesman Y decides to average the prices of salesmen Z and X, then offer an additional 25 percent discount. Salesman Y's final price is what fraction of salesman X's final price?",72/80,72/100,57/80,19/24,76/100,D,"Let retail price = $100.
+Z sells with 20% discount. So z sells at $80.
+X matches the price and gives additional 10%. So, X sells at 80-(10% of 80) = 80-8= $72
+Y avgs X and Z [(72+80)/2 = 76]. Y gives additional 25% discount. So, Y sells at 76-(25% of 76) = 76-19= $57
+Now, ratio of Y to X = 57/72 = 19/24
+Answer will be D.",GMAT::Quant GMAT::Quant::StudyA
+The tax on a commodity is diminished by 32% but its consumption is increased by 12%. Find the decrease percent in the revenue derived from it?,20%,18%,15%,12%,24%,E,"100 * 100 = 10000
+68 * 112 = 7616
+10000------- 2384
+100 ------- ? = 24%
+ANSWER:E",GMAT::Quant GMAT::Quant::StudyA
+"A man performs 1/2 of the total journey by rail, 1/3 by bus and the remaining 3km on foot. His total journey is",18km,10km,12km,24km,25km,A,"Explanation:
+Let the journey be x km
+Then, 1x/2 + 1x/3 +3 =x
+5x +18 =6x
+X = 18km
+Answer: Option A",GMAT::Quant GMAT::Quant::StudyA
+"In a shop, 40% socks are white and rest are black. 60% socks are made of cotton and rest are made of wool. 25% white socks are made of cotton and 20 of the black socks are made of wool. How many black socks Z are made of cotton?",100,80,60,50,25,A,"I'll prefer to solve this with plug n play method.
+As we know, White Cotton socks are only 25% and Total Cotton socks is 60% - Hence Black Cotton socks Z has to be [highlight]HIGH[/highlight]number. Thats why we've to pick high number... say 100 or 80.
+100 fits perfectly after relevant calculations. Hence answer A.",GMAT::Quant GMAT::Quant::StudyA

@@ -1,0 +1,13 @@
+participant,arm,correct,total
+# One row per participant x arm. arm = peer_on | peer_off | plain.
+# correct/total = post-test score for that arm. Remove the leading '#' to activate a row.
+# Example (3 participants, within-subjects, 10-item post-test each):
+p1,peer_on,8,10
+p1,peer_off,6,10
+p1,plain,5,10
+p2,peer_on,8,10
+p2,peer_off,9,10
+p2,plain,6,10
+p3,peer_on,7,10
+p3,peer_off,6,10
+p3,plain,4,10

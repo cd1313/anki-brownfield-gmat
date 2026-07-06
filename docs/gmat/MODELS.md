@@ -3,6 +3,11 @@
 Three separate scores, each with a range and a give-up rule (spec §4). Memory ships
 Wednesday; performance + readiness are the IRT work. Nothing is blended into one number.
 
+> **Submission one-pagers (spec §12):** [`model-memory.md`](model-memory.md),
+> [`model-performance.md`](model-performance.md), [`model-readiness.md`](model-readiness.md) —
+> a self-contained page per model with its give-up rule and evidence. This file is the longer
+> combined reference.
+
 ## 1. Memory (what you can recall now)
 
 - **What:** per-section FSRS **retrievability** of term flashcards (`GMAT::Terms`), i.e. the
@@ -12,7 +17,9 @@ Wednesday; performance + readiness are the IRT work. Nothing is blended into one
     studied"), shown **with a range** = the 10th–90th percentile of per-card retrievability across
     reviewed cards.
   - **Category** — coverage-aware recall over the **whole section** with unreviewed cards counted as
-    0 (`= practiced × coverage`), reported as a **single raw number** (no range).
+    0 (`= practiced × coverage`). Shown **with a range**: the practiced p10–p90 band scaled by the
+    same coverage factor (`category_low/high = practiced_low/high × coverage`), so the displayed
+    uncertainty tracks the studied-recall spread rather than pretending to a single exact number.
 - **Time-aware mastery:** a card counts as "mastered" only when retrievability ≥ 0.8 **and** the
   most recent rated review was answered within a 20 s budget.
 - **Give-up:** abstain unless ≥ 10 graded reviews **and** ≥ 5 distinct reviewed cards.
@@ -30,6 +37,9 @@ Wednesday; performance + readiness are the IRT work. Nothing is blended into one
 - **Estimation:** **EAP** over a fixed θ grid with an `N(0,1)` prior; θ̂ = posterior mean, and the
   posterior SD is the honest standard error. EAP stays finite for all-correct/all-wrong and few
   items (unlike MLE), and its SD drives the range and give-up.
+- **Shown with a range:** the dashboard reports the ability as **θ̂ ± SE** and an **accuracy band**
+  obtained by mapping `θ̂ ± SE` through the same 3PL (per-section guessing `c`), so the performance
+  score carries its uncertainty rather than a bare point number.
 - **Accuracy-only:** response times are recorded but do **not** enter θ (keeps the §7d paraphrase
   test — recall vs accuracy — clean). Timing is a separate readiness factor (below).
 - **Responses** are logged by `grade_mcq` as non-scheduling "cramming" revlog entries

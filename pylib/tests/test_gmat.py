@@ -180,7 +180,7 @@ def test_gmat_estimate_readiness():
                 min_responses=10,
                 min_coverage=0.5,
                 max_se=1.0,
-            )
+            ).sections
         }
 
     by = readiness()
@@ -201,6 +201,63 @@ def test_gmat_estimate_readiness():
     # took_millis == 0 must NOT log another response.
     col._backend.grade_mcq(card_id=cids[0], chosen="C", took_millis=0)
     assert readiness()["GMAT::Quant"].responses == 12
+
+
+def test_gmat_overall_score():
+    """The engine projects the 205–805 total from the section scores (shared by
+    desktop + mobile), and abstains until all three sections have a score. The
+    tags below satisfy each section's outline-coverage gate."""
+    col = getEmptyCol()
+    nt = _add_mcq_notetype(col)
+
+    def add_cards(tag: str, n: int) -> None:
+        for _ in range(n):
+            note = col.new_note(nt)
+            note["Question"] = "Q"
+            note["Answer"] = "C"
+            note.tags = [tag]
+            col.add_note(note, deck_id=1)
+            cid = note.cards()[0].id
+            col._backend.grade_mcq(card_id=cid, chosen="C", took_millis=3000)
+
+    def resp():
+        return col._backend.estimate_readiness(
+            search='note:"GMAT MCQ"',
+            tag_prefix="GMAT",
+            time_budget_secs=120,
+            section_minutes=45,
+            min_responses=10,
+            min_coverage=0.0,
+            max_se=1.0,
+        )
+
+    # Only Quant scored (Algebra covers ≥50% of the Quant outline) -> abstains.
+    add_cards("GMAT::Quant::Algebra", 12)
+    r = resp()
+    assert r.overall.sections_total == 3
+    assert r.overall.sections_scored == 1
+    assert not r.overall.has_score
+
+    # DataInsights has plenty of MCQs but only one of five outline types, so it is
+    # statistically scored yet fails the coverage gate -> overall still abstains.
+    add_cards("GMAT::Verbal::CriticalReasoning", 12)
+    add_cards("GMAT::DataInsights::DataSufficiency", 12)
+    di = next(s for s in resp().sections if s.section == "GMAT::DataInsights")
+    assert di.has_score  # enough responses
+    assert not di.coverage_ok  # 1/5 outline topics < 50%
+    assert not resp().overall.has_score
+
+    # Cover ≥3 of the 5 DataInsights types -> section and overall now score.
+    add_cards("GMAT::DataInsights::MultiSource", 4)
+    add_cards("GMAT::DataInsights::Graphics", 4)
+    r = resp()
+    di = next(s for s in r.sections if s.section == "GMAT::DataInsights")
+    assert di.coverage_ok
+    assert di.outline_total == 5 and di.outline_covered >= 3
+    assert r.overall.sections_scored == 3
+    assert r.overall.has_score
+    assert 205 <= r.overall.score <= 805
+    assert r.overall.score_low <= r.overall.score <= r.overall.score_high
 
 
 def test_gmat_record_graded_attempt():
@@ -231,7 +288,7 @@ def test_gmat_record_graded_attempt():
             min_responses=10,
             min_coverage=0.5,
             max_se=1.0,
-        )
+        ).sections
     }
     assert "GMAT::Quant" in by
     q = by["GMAT::Quant"]

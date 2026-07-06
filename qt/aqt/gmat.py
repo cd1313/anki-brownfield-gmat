@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import html
 import json
+import math
 import re
 import time
 
@@ -56,6 +57,30 @@ SECTIONS = [
     ("GMAT::DataInsights", "Data Insights"),
 ]
 
+# IRT constants, mirrored from the Rust engine (rslib/src/gmat/mod.rs) so the
+# performance range shown in the UI matches how the engine models accuracy.
+IRT_D = 1.702  # logistic scaling
+
+
+def _section_guess_c(section: str) -> float:
+    """Per-section guessing parameter c = 1/#choices (matches the engine)."""
+    if "Quant" in section:
+        return 0.20  # 5-way MCQ
+    if "DataInsights" in section or "Data Insights" in section:
+        return 0.50  # True/False
+    return 0.25  # Verbal: 4-way MCQ
+
+
+def _three_pl(theta: float, c: float, a: float = 1.0, b: float = 0.0) -> float:
+    """3PL success probability; a=1, b=0 assumed, as in the engine."""
+    return c + (1.0 - c) / (1.0 + math.exp(-IRT_D * a * (theta - b)))
+
+
+# The official GMAT Focus outline and its per-section coverage gate (spec §7c)
+# now live in the shared Rust engine (rslib/src/gmat), which returns each
+# section's outline_covered/outline_total/outline_missing/coverage_ok so desktop
+# and mobile share one definition. See docs/gmat/COVERAGE.md.
+
 
 # Card-based readiness view rendered in an AnkiWebView (inherits the coral theme
 # + dark mode automatically via stdHtml). `render(data)` is driven from Python.
@@ -63,6 +88,7 @@ _READINESS_HTML = """
 <div id="wrap">
   <h1>GMAT readiness</h1>
   <p class="muted">Three separate scores per section &mdash; never blended.</p>
+  <div id="overall"></div>
   <div id="cards"></div>
   <details class="about">
     <summary>How these scores work</summary>
@@ -75,7 +101,17 @@ _READINESS_HTML = """
   .muted { color: var(--fg-subtle); font-size: 0.82em; line-height: 1.55; }
   .sec-card { background: var(--canvas-elevated); border: 1px solid var(--border-subtle);
               border-radius: var(--border-radius-medium); padding: 20px 24px; margin: 18px 0; }
-  .sec-title { font-weight: 700; font-size: 1.05em; margin-bottom: 18px; }
+  .sec-title { font-weight: 700; font-size: 1.05em; margin-bottom: 6px; }
+  .overall-card { background: var(--canvas-elevated); border: 1px solid var(--accent-card);
+                  border-radius: var(--border-radius-medium); padding: 20px 24px; margin: 18px 0; }
+  .overall-label { color: var(--accent-card); font-weight: 700; font-size: 0.68em;
+                   text-transform: uppercase; letter-spacing: .06em; }
+  .overall-big { font-size: 2.8em; font-weight: 700; line-height: 1.1; margin: 6px 0 2px; }
+  .overall-big.dim { color: var(--fg-subtle); font-weight: 600; font-size: 1.2em; margin-top: 10px; }
+  .overall-sub { font-size: 0.85em; color: var(--fg); margin-top: 2px; }
+  .overall-sub2 { font-size: 0.75em; color: var(--fg-subtle); margin-top: 3px; }
+  .sec-cov { font-size: 0.78em; color: var(--fg-subtle); margin-bottom: 14px; }
+  .sec-cov.low { color: #c0392b; }
   .metrics { display: grid; grid-template-columns: repeat(3, 1fr); }
   .metric { min-width: 0; padding: 2px 22px; }
   .metric:first-child { padding-left: 0; }
@@ -111,9 +147,17 @@ function metric(label, m){
   var sub2 = m.sub2 ? '<div class="metric-sub2">'+esc(m.sub2)+'</div>' : '';
   return '<div class="metric"><div class="metric-label">'+esc(label)+'</div>'+big+bar+sub+sub2+'</div>';
 }
+function overall(m){
+  var big = '<div class="overall-big'+(m.dim?' dim':'')+'">'+esc(m.big)+'</div>';
+  var sub = m.sub ? '<div class="overall-sub">'+esc(m.sub)+'</div>' : '';
+  var sub2 = m.sub2 ? '<div class="overall-sub2">'+esc(m.sub2)+'</div>' : '';
+  return '<div class="overall-card"><div class="overall-label">Projected overall score</div>'+big+sub+sub2+'</div>';
+}
 function render(data){
+  document.getElementById('overall').innerHTML = data.overall ? overall(data.overall) : '';
   document.getElementById('cards').innerHTML = data.sections.map(function(s){
-    return '<div class="sec-card"><div class="sec-title">'+esc(s.label)+'</div><div class="metrics">'+
+    var cov = s.coverage ? '<div class="sec-cov'+(s.covLow?' low':'')+'">'+esc(s.coverage)+'</div>' : '';
+    return '<div class="sec-card"><div class="sec-title">'+esc(s.label)+'</div>'+cov+'<div class="metrics">'+
       metric('Memory', s.memory)+metric('Performance', s.performance)+metric('Readiness', s.readiness)+
       '</div></div>';
   }).join('');
@@ -162,10 +206,19 @@ class GmatReadinessDialog(QDialog):
                 "sub": f"{t.reviewed_cards}/{t.total_cards} reviewed",
                 "sub2": f"needs ≥{MIN_REVIEWS} reviews & ≥{MIN_CARDS} cards",
             }
+        # Range on the (coverage-aware) category score. The category score is
+        # practiced_score × coverage, so its range scales the practiced-recall
+        # p10–p90 band by the same coverage factor. coverage = reviewed/total.
+        coverage = (t.reviewed_cards / t.total_cards) if t.total_cards else 0.0
+        cat_low = t.practiced_low * coverage
+        cat_high = t.practiced_high * coverage
         return {
             "big": f"{t.category_score * 100:.0f}%",
             "barPct": round(t.category_score * 100),
-            "sub": f"{t.reviewed_cards}/{t.total_cards} reviewed · {t.mastered_cards} mastered",
+            "sub": (
+                f"range {cat_low * 100:.0f}–{cat_high * 100:.0f}% · "
+                f"{t.reviewed_cards}/{t.total_cards} reviewed · {t.mastered_cards} mastered"
+            ),
             "sub2": (
                 f"studied recall {t.practiced_score * 100:.0f}% "
                 f"({t.practiced_low * 100:.0f}–{t.practiced_high * 100:.0f}%)"
@@ -183,13 +236,73 @@ class GmatReadinessDialog(QDialog):
                 "sub": f"{s.responses}/{PERF_MIN_RESPONSES} MCQs answered",
                 "sub2": f"needs ≥{PERF_MIN_RESPONSES} to score",
             }
+        # Performance carries an honest range via the IRT ability standard error
+        # (EAP posterior SD). Map θ̂ ± SE through the same 3PL used by the engine to
+        # give an accuracy band around the point estimate.
+        c = _section_guess_c(s.section)
+        acc_low = _three_pl(s.theta - s.theta_se, c)
+        acc_high = _three_pl(s.theta + s.theta_se, c)
         return {
             "big": f"{s.pct_correct * 100:.0f}%",
-            "sub": f"θ {s.theta:+.2f} · {s.responses} MCQs",
+            "sub": f"range {acc_low * 100:.0f}–{acc_high * 100:.0f}% · {s.responses} MCQs",
+            "sub2": f"ability θ {s.theta:+.2f} ± {s.theta_se:.2f}",
         }
 
     @staticmethod
+    def _overall_metric(overall) -> dict:
+        """Projected overall score, computed by the shared Rust engine from all
+        section scores (single source of truth for the 205–805 total formula and
+        the abstain rule). The engine already excludes sections that fail the
+        outline-coverage gate, so we render its verdict directly."""
+        total = overall.sections_total if overall is not None else len(SECTIONS)
+        if overall is None or not overall.has_score:
+            scored = overall.sections_scored if overall is not None else 0
+            return {
+                "big": "—",
+                "dim": True,
+                "sub": f"Needs all {total} section scores ({scored}/{total} ready)",
+            }
+        moe = max(overall.score - overall.score_low, overall.score_high - overall.score)
+        return {
+            "big": f"{overall.score}",
+            "sub": (
+                f"range {overall.score_low}–{overall.score_high} "
+                f"(±{moe}) · 205–805 scale"
+            ),
+            "sub2": (
+                "(Quant + Verbal + Data Insights − 180) × 20/3 + 205, "
+                "rounded to the nearest 5"
+            ),
+        }
+
+    @staticmethod
+    def _coverage_line(s):
+        """(text, is_low) outline-coverage line from the engine's fields, or
+        (None, False) when there's no practice data / no outline for the section."""
+        if s is None or s.outline_total == 0:
+            return None, False
+        pct = round(s.outline_covered / s.outline_total * 100)
+        line = (
+            f"Outline coverage {pct}% "
+            f"({s.outline_covered}/{s.outline_total} official topics)"
+        )
+        if s.outline_missing:
+            line += " · missing: " + ", ".join(s.outline_missing)
+        return line, not s.coverage_ok
+
+    @staticmethod
     def _readiness_metric(s) -> dict:
+        # Outline-coverage abstain (spec §7c) takes precedence: a deck that skips
+        # too much of a section's official outline must not read as "ready".
+        if s is not None and s.outline_total > 0 and not s.coverage_ok:
+            pct = round(s.outline_covered / s.outline_total * 100)
+            miss = ", ".join(s.outline_missing) or "key topics"
+            return {
+                "big": "—",
+                "dim": True,
+                "sub": f"No score: only {pct}% of the outline covered",
+                "sub2": f"missing: {miss}",
+            }
         if s is None or not s.has_score:
             return {"big": "—", "dim": True, "sub": "Not enough data yet"}
         # Project the 60–90 section score onto a 0–100 bar.
@@ -219,25 +332,26 @@ class GmatReadinessDialog(QDialog):
                 min_cards=MIN_CARDS,
             )
         }
-        readiness = {
-            s.section: s
-            for s in col._backend.estimate_readiness(
-                search=PRACTICE_SEARCH,
-                tag_prefix=TAG_PREFIX,
-                time_budget_secs=PRACTICE_TIME_BUDGET_SECS,
-                section_minutes=SECTION_MINUTES,
-                min_responses=PERF_MIN_RESPONSES,
-                min_coverage=PERF_MIN_COVERAGE,
-                max_se=PERF_MAX_SE,
-            )
-        }
+        readiness_resp = col._backend.estimate_readiness(
+            search=PRACTICE_SEARCH,
+            tag_prefix=TAG_PREFIX,
+            time_budget_secs=PRACTICE_TIME_BUDGET_SECS,
+            section_minutes=SECTION_MINUTES,
+            min_responses=PERF_MIN_RESPONSES,
+            min_coverage=PERF_MIN_COVERAGE,
+            max_se=PERF_MAX_SE,
+        )
+        readiness = {s.section: s for s in readiness_resp.sections}
 
         sections = []
         for topic, label in SECTIONS:
             s = readiness.get(topic)
+            cov_line, cov_low = self._coverage_line(s)
             sections.append(
                 {
                     "label": label,
+                    "coverage": cov_line,
+                    "covLow": cov_low,
                     "memory": self._memory_metric(memory.get(topic)),
                     "performance": self._performance_metric(s),
                     "readiness": self._readiness_metric(s),
@@ -253,7 +367,11 @@ class GmatReadinessDialog(QDialog):
             "calibrated); the Readiness θ→score is an approximate placeholder, not validated "
             "against real exam outcomes."
         )
-        payload = {"sections": sections, "caption": caption}
+        payload = {
+            "sections": sections,
+            "overall": self._overall_metric(readiness_resp.overall),
+            "caption": caption,
+        }
         self.web.eval(f"render({json.dumps(payload)});")
 
     def closeEvent(self, evt: QCloseEvent | None) -> None:
@@ -290,6 +408,12 @@ def setup_gmat_menu(mw: aqt.AnkiQt) -> None:
     qconnect(organize.triggered, lambda: organize_gmat_decks_by_section(mw))
     mw.form.menuTools.addAction(organize)
 
+    # Study-feature ablation switch (spec §8): toggle only the peer/reciprocal-
+    # teaching step for the Peer ON vs Peer OFF arms. See docs/gmat/STUDY-FEATURE.md.
+    peer_toggle = QAction("GMAT: Toggle Peer Feature (study-feature A/B)", mw)
+    qconnect(peer_toggle.triggered, lambda: toggle_peer_feature(mw))
+    mw.form.menuTools.addAction(peer_toggle)
+
     setup_ai_grading()
     # On each profile load, keep the stored note types in sync with the code:
     # refresh the MCQ template/CSS, and (when AI is on) ensure every GMAT::Terms
@@ -299,10 +423,57 @@ def setup_gmat_menu(mw: aqt.AnkiQt) -> None:
     _gmat_profile_refresh()
 
 
+GMAT_SEEDED_KEY = "gmat_builtin_deck_seeded"
+
+
+def seed_builtin_gmat_deck(col) -> None:
+    """Import the bundled GMAT deck once, so a fresh profile has it built in.
+
+    Guarded by a one-time config flag (not "are the GMAT decks present?") so a
+    user who later deletes the deck on purpose won't have it silently re-imported.
+    The .apkg ships under aqt/data/gmat/ (see build/configure/src/aqt.rs) with the
+    full GMAT::Terms + GMAT::Practice tree and no scheduling, so every new user
+    starts the deck fresh.
+    """
+    from anki.collection import ImportAnkiPackageOptions, ImportAnkiPackageRequest
+    from aqt.utils import aqt_data_path
+
+    if col.get_config(GMAT_SEEDED_KEY, False):
+        return
+    apkg = aqt_data_path() / "gmat" / "gmat.apkg"
+    if not apkg.exists():
+        return  # not packaged in this build; skip silently
+    try:
+        col.import_anki_package(
+            ImportAnkiPackageRequest(
+                package_path=str(apkg),
+                options=ImportAnkiPackageOptions(
+                    with_scheduling=False,
+                    with_deck_configs=True,
+                    merge_notetypes=True,
+                ),
+            )
+        )
+    except Exception as exc:
+        print(f"GMAT built-in deck import failed: {exc}")
+        return
+    col.set_config(GMAT_SEEDED_KEY, True)
+
+
 def _gmat_profile_refresh() -> None:
     mw = aqt.mw
     if not (mw and mw.col):
         return
+    seed_builtin_gmat_deck(mw.col)
+    # Backfill per-category sub-topic tags on MCQ notes (once) so the practice
+    # recommender can target the weakest category, not just the weakest section.
+    ensure_mcq_subtopic_tags(mw.col)
+    # AI ships on by default when the hosted proxy is configured (users get AI with
+    # no key of their own). Only set it once, so turning AI off later sticks.
+    from aqt import gmat_ai
+
+    if mw.col.get_config(AI_ENABLED_KEY) is None and gmat_ai._proxy_configured():
+        mw.col.set_config(AI_ENABLED_KEY, True)
     if mw.col.models.by_name(MCQ_NOTETYPE_NAME):
         ensure_mcq_notetype(mw.col)  # refresh template/CSS (never creates it here)
     # Keep the term note types in sync with the AI switch: text box present only
@@ -418,8 +589,15 @@ def _counts_excl(node, practice_did) -> tuple[int, int, int]:
 # fall back to normal self-rating.
 TERMS_DECK = "GMAT::Terms"
 AI_ENABLED_KEY = "gmat_ai_enabled"
+# Separate toggle for the peer-to-peer / reciprocal-teaching feature (Correct the
+# Peer + peer explanations of missed MCQs). Default ON. Kept independent of the AI
+# switch so the study-feature ablation (spec §8) can turn *only* the peer step off
+# while leaving MCQ grading and everything else identical — the three arms are
+# Peer ON / Peer OFF (this flag) / plain Anki. See docs/gmat/STUDY-FEATURE.md.
+PEER_ENABLED_KEY = "gmat_peer_enabled"
 
 _MCQ_FRONT = """\
+<div id="gmat-timer" aria-live="off">2:00</div>
 <div class="gmat-q">{{Question}}</div>
 <div class="gmat-opts">
   {{#A}}<button class="gmat-opt" data-letter="A" onclick="gmatChoose('A')"><b>A.</b> {{A}}</button>{{/A}}
@@ -439,6 +617,27 @@ _MCQ_FRONT = """\
 var GMAT_DROID = (typeof globalThis !== 'undefined' && globalThis.ankiPlatform === 'ankidroid');
 // When this card is shown, for the AnkiDroid answer-latency (the IRT pacing input).
 var GMAT_SHOWN = Date.now();
+// A 2-minute countdown pacing aid. It keeps counting into the negatives past
+// zero (running out of time never blocks answering); it's purely to build time
+// awareness. Freezes when an answer is graded (see gmatReveal).
+if (window.gmatTimerId) { clearInterval(window.gmatTimerId); }
+var GMAT_LIMIT = 120; // seconds
+function gmatFmtTime(remaining) {
+  var neg = remaining < 0;
+  var s = Math.abs(remaining);
+  var m = Math.floor(s / 60);
+  var ss = s % 60;
+  return (neg ? '-' : '') + m + ':' + (ss < 10 ? '0' : '') + ss;
+}
+function gmatTickTimer() {
+  var el = document.getElementById('gmat-timer');
+  if (!el) return;
+  var remaining = GMAT_LIMIT - Math.floor((Date.now() - GMAT_SHOWN) / 1000);
+  el.textContent = gmatFmtTime(remaining);
+  if (remaining < 0) { el.classList.add('gmat-timer-over'); }
+}
+gmatTickTimer();
+window.gmatTimerId = setInterval(gmatTickTimer, 1000);
 function gmatChoose(l) {
   if (GMAT_DROID) { gmatChooseDroid(l); } else { pycmd('gmat_mcq:' + l); }
 }
@@ -462,6 +661,8 @@ function gmatContinue() {
   } else { pycmd('gmat_mcq_continue'); }
 }
 function gmatReveal(chosen, correct, correctLetter) {
+  // Freeze the countdown at whatever it reads now (positive or negative).
+  if (window.gmatTimerId) { clearInterval(window.gmatTimerId); window.gmatTimerId = null; }
   document.querySelectorAll('.gmat-opt').forEach(function (b) {
     b.disabled = true;
     if (b.dataset.letter === correctLetter) b.classList.add('gmat-correct');
@@ -494,6 +695,9 @@ _MCQ_BACK = """\
 _MCQ_CSS = """\
 .card { font-family: Inter, "Familjen Grotesk", system-ui, -apple-system, sans-serif;
         font-size: 18px; text-align: left; }
+#gmat-timer { font-variant-numeric: tabular-nums; font-weight: 700;
+            font-size: 15px; color: #6b5f54; margin-bottom: 12px; }
+#gmat-timer.gmat-timer-over { color: #d5747b; }
 .gmat-q { font-weight: 600; margin-bottom: 16px; line-height: 1.5; }
 .gmat-opts { display: flex; flex-direction: column; gap: 10px; }
 /* Follow the app theme via the reviewer's CSS custom properties, with warm
@@ -596,7 +800,11 @@ def _grade_and_reveal(reviewer, letter: str) -> None:
     )
     # On a wrong answer, an AI "study peer" explains the mistake (desktop-only,
     # async so the reveal isn't blocked; nothing shown when AI is off).
-    if not res.correct and ai_grading_enabled(reviewer.mw.col):
+    if (
+        not res.correct
+        and ai_grading_enabled(reviewer.mw.col)
+        and peer_enabled(reviewer.mw.col)
+    ):
         _maybe_peer_guidance(reviewer, letter)
 
 
@@ -842,6 +1050,179 @@ def organize_gmat_decks_by_section(mw: aqt.AnkiQt) -> None:
     mw.reset()
 
 
+# --- MCQ sub-topic (category) tagging ----------------------------------------
+#
+# The adaptive practice recommender groups MCQ responses by the tag one level
+# below the section (e.g. GMAT::Quant::Algebra) so it can serve your weakest
+# *category*, not just your weakest section. Verbal MCQs already ship with
+# CR/RC/SC sub-tags; Quant and DataInsights mostly don't. This one-time,
+# idempotent pass adds a conservative, content-derived sub-topic tag to MCQ
+# notes that lack one. Ambiguous items are left section-only — they still count
+# toward the section score and the recommender's section fallback.
+
+GMAT_SUBTOPIC_TAGS_VERSION = 1
+_GMAT_SUBTOPIC_KEY = "gmat_mcq_subtopic_tags_version"
+
+# Section leaf -> ordered (category, keywords) rules; first match wins, so the
+# more specific categories come first. Matched case-insensitively against the
+# plain-text question. An empty keyword tuple is the section's default (applied
+# when no earlier rule matched). Calibrated against the shipped deck: Quant is
+# AQuA-RAT-style word problems, and the untagged DataInsights items are all
+# table-reading tasks.
+_SUBTOPIC_RULES: dict[str, list[tuple[str, tuple[str, ...]]]] = {
+    "Quant": [
+        (
+            "Geometry",
+            (
+                "triangle",
+                "rectangle",
+                "square",
+                "circle",
+                "radius",
+                "diameter",
+                "perimeter",
+                "area",
+                "volume",
+                "cylinder",
+                "cube",
+                "angle",
+                "parallel",
+                "perpendicular",
+                "hypotenuse",
+                "coordinate plane",
+                "xy-plane",
+                "x-y plane",
+                "vertices",
+                "vertex",
+                "polygon",
+                "quadrilateral",
+                "diagonal",
+                "degrees",
+            ),
+        ),
+        (
+            "Probability",
+            (
+                "probability",
+                "dice",
+                "coin",
+                "how many ways",
+                "how many arrangements",
+                "arrange",
+                "permutation",
+                "combination",
+                "at random",
+                "randomly",
+                "chosen at random",
+            ),
+        ),
+        (
+            "Algebra",
+            (
+                "equation",
+                "solve for",
+                "inequality",
+                "value of x",
+                "polynomial",
+                "the line",
+                "slope",
+                "function",
+                "expression",
+                "system of",
+            ),
+        ),
+        (
+            "Arithmetic",
+            (
+                "percent",
+                "%",
+                "average",
+                "arithmetic mean",
+                "median",
+                "ratio",
+                "fraction",
+                "remainder",
+                "divisible",
+                "multiple of",
+                "prime",
+                "least common",
+                "greatest common",
+                "discount",
+                "per hour",
+                "speed",
+                "profit",
+                "interest",
+            ),
+        ),
+    ],
+    # The shipped DataInsights items lacking a sub-tag are all table-reading.
+    "DataInsights": [("TableAnalysis", ())],
+    # Verbal already ships fully sub-tagged; these are defensive fallbacks.
+    "Verbal": [
+        (
+            "CriticalReasoning",
+            ("argument", "conclusion", "assumption", "weaken", "strengthen"),
+        ),
+        (
+            "ReadingComprehension",
+            ("passage", "according to the passage", "primary purpose"),
+        ),
+        ("SentenceCorrection", ("underlined",)),
+    ],
+}
+
+
+def classify_mcq_subtopic(section: str, question_html: str) -> str | None:
+    """Return the sub-topic leaf (e.g. "Algebra") for a question, or None when no
+    rule matches confidently (the note then stays section-only)."""
+    rules = _SUBTOPIC_RULES.get(section)
+    if not rules:
+        return None
+    text = re.sub(r"<[^>]+>", " ", question_html).lower()
+    for category, keywords in rules:
+        if not keywords:  # section default (e.g. DataInsights -> TableAnalysis)
+            return category
+        if any(kw in text for kw in keywords):
+            return category
+    return None
+
+
+def ensure_mcq_subtopic_tags(col) -> int:
+    """Add a content-derived sub-topic tag to GMAT MCQ notes that lack one, so the
+    recommender can score per-category. Idempotent (guarded by a version flag);
+    only ever adds tags. Returns the number of notes tagged."""
+    if col.get_config(_GMAT_SUBTOPIC_KEY, 0) >= GMAT_SUBTOPIC_TAGS_VERSION:
+        return 0
+    if not col.models.by_name(MCQ_NOTETYPE_NAME):
+        return 0
+    by_tag: dict[str, list] = {}
+    for nid in col.find_notes(f'note:"{MCQ_NOTETYPE_NAME}"'):
+        note = col.get_note(nid)
+        # Leave notes that already carry a GMAT::<section>::<sub> tag untouched.
+        if any(
+            t.startswith(TAG_PREFIX + "::") and len(t.split("::")) >= 3
+            for t in note.tags
+        ):
+            continue
+        section = _section_leaf_from_tags(" ".join(note.tags))
+        if not section:
+            continue
+        try:
+            question = note["Question"]
+        except KeyError:
+            continue
+        category = classify_mcq_subtopic(section, question)
+        if not category:
+            continue
+        by_tag.setdefault(f"{TAG_PREFIX}::{section}::{category}", []).append(nid)
+    tagged = 0
+    for full_tag, group in by_tag.items():
+        col.tags.bulk_add(group, full_tag)
+        tagged += len(group)
+    col.set_config(_GMAT_SUBTOPIC_KEY, GMAT_SUBTOPIC_TAGS_VERSION)
+    return tagged
+
+
 # --- AI term-card grading ----------------------------------------------------
 #
 # Term cards use Anki's built-in type-answer machinery (a {{type:Field}} input
@@ -869,6 +1250,12 @@ def ai_grading_enabled(col) -> bool:
         return gmat_ai.ai_available()
     except Exception:
         return False
+
+
+def peer_enabled(col) -> bool:
+    """True when the peer-to-peer / reciprocal-teaching feature is on (default on).
+    Independent of the AI switch so the §8 ablation can disable only the peer step."""
+    return bool(col) and bool(col.get_config(PEER_ENABLED_KEY, True))
 
 
 def _is_terms_card(card) -> bool:
@@ -1149,6 +1536,23 @@ def toggle_ai_grading(mw: aqt.AnkiQt) -> None:
         )
     else:
         tooltip("AI term grading enabled.", parent=mw)
+
+
+def toggle_peer_feature(mw: aqt.AnkiQt) -> None:
+    """Flip the peer-to-peer / reciprocal-teaching feature on/off (the §8 study-
+    feature ablation switch). Everything else — MCQ grading, scores — is unchanged,
+    so Peer OFF is a clean ablation of just the peer step."""
+    col = mw.col
+    if not col:
+        return
+    new = not bool(col.get_config(PEER_ENABLED_KEY, True))
+    col.set_config(PEER_ENABLED_KEY, new)
+    tooltip(
+        "Peer feature ON — Correct the Peer + peer explanations active."
+        if new
+        else "Peer feature OFF (ablation) — MCQ grading unchanged, no peer step.",
+        parent=mw,
+    )
 
 
 def _reset_ai_grade_guard(*args) -> None:

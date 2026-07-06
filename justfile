@@ -28,6 +28,44 @@ sync-server user="demo" pass="demo":
 eval-ai *args:
     PYTHONPATH=out/pylib out/pyenv/bin/python tools/gmat_eval/run_ai_eval.py {{args}}
 
+# Evaluate the GMAT IRT performance model (ability recovery + held-out prediction).
+# Reproducible (fixed seed); writes docs/gmat/EVAL-RESULTS.md.
+eval-perf:
+    PYTHONPATH=out/pylib out/pyenv/bin/python tools/gmat_eval/run_eval.py
+
+# Calibrate the memory model on held-out simulated reviews (Brier/log-loss + chart).
+# Writes docs/gmat/MEMORY-CALIBRATION.md.
+eval-memory:
+    PYTHONPATH=out/pylib out/pyenv/bin/python tools/gmat_eval/run_memory_eval.py
+
+# Report the memory-vs-performance gap per topic (spec §7d, reframed).
+perf-vs-memory:
+    PYTHONPATH=out/pylib out/pyenv/bin/python tools/gmat_eval/perf_vs_memory.py
+
+# Build the study materials (3 matched study + held-out post-test decks) for the
+# peer-feature ablation. Writes data/gmat/study_sets/ + docs/gmat/study-materials.md.
+make-study-sets:
+    PYTHONPATH=out/pylib out/pyenv/bin/python tools/gmat_eval/make_study_sets.py
+
+# Score the real 3-user peer-to-peer study-feature ablation (spec §8) from
+# data/gmat/study_results.csv. Writes docs/gmat/STUDY-FEATURE.md.
+study-feature:
+    PYTHONPATH=out/pylib out/pyenv/bin/python tools/gmat_eval/study_feature.py
+
+# Scan for data leakage: eval gold sets vs practice banks (spec §7e).
+# Exits nonzero on any overlap. Writes docs/gmat/LEAKAGE-CHECK.md.
+leak-check:
+    PYTHONPATH=out/pylib out/pyenv/bin/python tools/gmat_eval/check_leakage.py
+
+# One-command speed benchmark on a 50k-card deck: p50/p95/worst per action (spec §7h/§10).
+# Writes docs/gmat/BENCHMARK.md.
+bench *args:
+    PYTHONPATH=out/pylib out/pyenv/bin/python tools/gmat_eval/bench.py {{args}}
+
+# Crash test: kill mid-review 20x, verify zero corrupted collections (spec §7g).
+crash-test *args:
+    PYTHONPATH=out/pylib out/pyenv/bin/python tools/gmat_eval/crash_test.py {{args}}
+
 # Watch web sources and rebuild/reload Anki's web stack on change (macOS/Linux)
 web-watch:
     ./tools/web-watch

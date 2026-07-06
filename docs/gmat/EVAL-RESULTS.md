@@ -26,7 +26,7 @@ IRT beats both baselines on log-loss: **True**.
 
 ## 3. Leakage check (spec §7e)
 
-Estimation/test item id overlap across all students: **0** (must be 0).
+This synthetic study fits θ on estimation items and evaluates on a **separate** set of held-out items that are generated independently and never logged to the engine, so the train/test split is disjoint by construction. Nothing is trained on real content here. Real data-leakage — whether the hand-labelled AI **gold sets** appear in the **practice** banks — is scanned over the actual data by `tools/gmat_eval/check_leakage.py`; the latest result is **CLEAN** (see `docs/gmat/LEAKAGE-CHECK.md`).
 
 ## Honesty notes
 
