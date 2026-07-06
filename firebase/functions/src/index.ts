@@ -2,8 +2,10 @@
 // GMAT AI proxy — a single HTTPS function that lets the desktop/Android apps use
 // AI features WITHOUT shipping an OpenAI key. The real key lives only in Cloud
 // Secret Manager here. Every request must carry a Firebase (anonymous) Auth ID
-// token; Android must additionally pass a Play Integrity App Check token. Usage
-// is bounded by a per-user daily quota plus a global kill-switch.
+// token. Android may additionally pass a Play Integrity App Check token, but that
+// is only enforced when GMAT_AI_APPCHECK_ENFORCED=true (Play Integrity can only
+// attest apps installed from Google Play, not sideloaded/GitHub-released APKs).
+// Usage is bounded by a per-user daily quota plus a global kill-switch.
 //
 // The request/response body is the OpenAI chat-completions shape, so the clients'
 // existing parsing is unchanged; this function only validates + forwards.
@@ -22,6 +24,10 @@ const OPENAI_API_KEY = defineSecret("OPENAI_API_KEY");
 // Per-user daily request cap; override via the GMAT_AI_DAILY_QUOTA env var
 // (functions/.env or the deployed environment) without a code change.
 const DAILY_QUOTA = Number(process.env.GMAT_AI_DAILY_QUOTA) || 100;
+// Enforce Play Integrity App Check on Android requests. OFF by default because a
+// sideloaded / GitHub-released APK cannot produce a valid attestation; flip to
+// true only once the app is distributed via Google Play. Auth + quota still apply.
+const APPCHECK_ENFORCED = process.env.GMAT_AI_APPCHECK_ENFORCED === "true";
 
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 const ALLOWED_MODELS = new Set(["gpt-4o-mini"]);
@@ -58,11 +64,11 @@ export const gmatAiChat = onRequest(
       return;
     }
 
-    // 2. App Check — required for the Android app (Play Integrity). Desktop has
-    //    no App Check provider and is exempt; it declares its platform so we know
-    //    not to require a token it can't produce.
+    // 2. App Check — only enforced for Android when APPCHECK_ENFORCED is set
+    //    (requires Google Play distribution for Play Integrity to attest). Desktop
+    //    has no App Check provider and is always exempt; it declares its platform.
     const platform = req.get("X-Gmat-Platform") || "";
-    if (platform === "android") {
+    if (platform === "android" && APPCHECK_ENFORCED) {
       const appCheckToken = req.get("X-Firebase-AppCheck");
       if (!appCheckToken) {
         res.status(401).json({ error: "missing_appcheck" });
